@@ -203,12 +203,15 @@ function nicen_theme_navigator() {
 			$h       = "/\<h2[\s\S]*?\<\/h2\>|\<h3[\s\S]*?\<\/h3\>|\<h4[\s\S]*?\<\/h4\>/"; //匹配h1标题的正则
 		}
 
-
 		preg_match_all( $h, $content, $match, PREG_OFFSET_CAPTURE );
 
 		$replace = '';
+
 		/* 父级节点 */
-		$parent = [];
+		$parent = [
+			'h1' => '',
+			'h2' => ''
+		];
 
 		/* 标签匹配 */
 		foreach ( $match[0] as $item ) {

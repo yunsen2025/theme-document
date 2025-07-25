@@ -11,13 +11,13 @@ function nicen_theme_admin_load_source() {
     global $desination_configs;
 
 
-    wp_enqueue_script( 'vuejs', 'https://lf6-cdn-tos.bytecdntp.com/cdn/expire-1-M/vue/2.6.14/vue.js', false );
-    wp_enqueue_script( 'moments', 'https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/moment.js/2.29.1/moment.min.js' );
+    wp_enqueue_script( 'vuejs', $url . '/assets/theme/vue.min.js', false );
+    wp_enqueue_script( 'moments', $url . '/assets/theme/moment.min.js' );
 
-    wp_enqueue_script( 'antd', 'https://lf26-cdn-tos.bytecdntp.com/cdn/expire-1-M/ant-design-vue/1.7.8/antd.min.js', [ 'jquery' ] );
+    wp_enqueue_script( 'antd', $url . '/assets/theme/antd.min.js', [ 'jquery' ] );
     wp_enqueue_script( 'Vcolorpicker', $url . '/common/admin/colorpicker.js', [ 'vuejs' ], filemtime( $root . '/common/admin/colorpicker.js' ), true );
 
-    wp_enqueue_style( 'antdcss', 'https://lf6-cdn-tos.bytecdntp.com/cdn/expire-1-M/ant-design-vue/1.7.8/antd.min.css' );
+    wp_enqueue_style( 'antdcss', $url . '/assets/theme/antd.min.css' );
 
     wp_enqueue_style( 'admincss', $url . '/common/admin/admin.css', array(), filemtime( $root . '/common/admin/admin.css' ) );
     wp_enqueue_script( 'adminjs', $url . '/common/admin/admin.js', [
@@ -35,7 +35,7 @@ function nicen_theme_admin_load_source() {
         'media-editor'
     ], filemtime( $root . '/common/admin/load.js' ) );
 
-    wp_enqueue_script( 'axios', 'https://lf26-cdn-tos.bytecdntp.com/cdn/expire-1-M/axios/0.26.0/axios.min.js' );
+    wp_enqueue_script( 'axios', $url . '/assets/theme/axios.min.js' );
     wp_enqueue_media(); //加载媒体选择器
 
 
@@ -63,7 +63,7 @@ function nicen_theme_widget_admin_load() {
     $root = get_template_directory(); //主题路径
     $url  = get_template_directory_uri();//主题url
     wp_enqueue_style( 'widgetcss', $url . '/common/widget/widget.css', array(), filemtime( $root . '/common/widget/widget.css' ) );
-    wp_enqueue_style( 'jqueryuicss', 'https://lf6-cdn-tos.bytecdntp.com/cdn/expire-1-M/jqueryui/1.12.1/jquery-ui.min.css', array() );
+    wp_enqueue_style( 'jqueryuicss', $url . '/assets/theme/jquery-ui.min.css', array() );
     wp_enqueue_script( 'widgetjs', $url . '/common/widget/widget.js', array(
         'jquery-ui-tabs',
         'jquery-ui-datepicker'

@@ -12,14 +12,18 @@ function nicen_theme_load_source() {
 
 	/* 底部推荐区域 */
 	if ( is_active_sidebar( 'content_down' ) ) {
-		wp_enqueue_script( 'swiper', 'https://lf26-cdn-tos.bytecdntp.com/cdn/expire-1-M/Swiper/8.0.6/swiper-bundle.js', false );
-		wp_enqueue_style( 'swiper-styles', 'https://lf26-cdn-tos.bytecdntp.com/cdn/expire-1-M/Swiper/8.0.6/swiper-bundle.css' );
+		wp_enqueue_script( 'swiper', $url . '/assets/theme/swiper-bundle.js', false );
+		wp_enqueue_style( 'swiper-styles', $url . '/assets/theme/swiper-bundle.css' );
 	}
 
 
 	/*主题的JS*/
-	wp_enqueue_script( 'jquerys', 'https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/jquery/3.6.0/jquery.min.js', false );
-	wp_enqueue_script( 'enquire', 'https://lf6-cdn-tos.bytecdntp.com/cdn/expire-1-M/enquire.js/2.1.6/enquire.js', false );
+	wp_enqueue_script( 'jquery' );
+
+	/* 内联的js */
+	wp_add_inline_script( "jquery", 'window.$ = jQuery;', 'after' );
+
+	wp_enqueue_script( 'enquire', $url . '/assets/theme/enquire.js', false );
 
 
 	wp_enqueue_script( 'main-sub', $url . '/common/inline/main.js', array(), filemtime( $root . '/common/inline/main.js' ), false );
@@ -78,8 +82,8 @@ function nicen_theme_load_source() {
 	if ( is_home() ) {
 		wp_enqueue_style( 'swiper_self', $url . '/common/swiper/swiper.css', array(), filemtime( $root . '/common/swiper/swiper.css' ) );
 		wp_enqueue_script( 'swiper_self', $url . '/common/swiper/swiper.js', array(), filemtime( $root . '/common/swiper/swiper.js' ), true );
-		wp_enqueue_script( 'swiper', 'https://lf6-cdn-tos.bytecdntp.com/cdn/expire-1-M/Swiper/8.0.3/swiper-bundle.min.js', false );
-		wp_enqueue_style( 'swiper', 'https://lf9-cdn-tos.bytecdntp.com/cdn/expire-1-M/Swiper/8.0.3/swiper-bundle.css', array() );
+		wp_enqueue_script( 'swiper', $url . '/assets/theme/swiper-bundle.js', false );
+		wp_enqueue_style( 'swiper-styles', $url . '/assets/theme/swiper-bundle.css' );
 		/*
 		 * 内联的js代码
 		 * */
