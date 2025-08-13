@@ -1065,3 +1065,15 @@ function get_new_post_modified_time( $format ) {
 	}
 
 }
+
+/**
+ * 获取CDN地址
+ */
+function get_cdn_uri() {
+    $cdn_uri = nicen_theme_config('document_cdn_uri', false);
+    if (empty($cdn_uri)) {
+        $cdn_uri = get_template_directory_uri();
+    }
+
+    return $cdn_uri;
+}
