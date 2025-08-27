@@ -115,7 +115,7 @@ const ADMIN = [
 						'title'    => '静态资源 CDN 前缀',
 						'callback' => 'nicen_theme_form_input',
 						'args'     => [
-							'tip' => '为空则不使用 CDN。如 https://fastly.jsdelivr.net/gh/friend-nicen/theme-document@master',
+							'tip' => '为空则不使用 CDN。示例：https://fastly.jsdelivr.net/gh/friend-nicen/theme-document',
 						],
 					],
 					[
