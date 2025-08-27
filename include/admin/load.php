@@ -7,7 +7,7 @@ function nicen_theme_admin_load_source() {
 
 
     $root = get_template_directory(); //主题路径
-    $url  = get_cdn_uri();//主题url
+    $url  = get_template_directory_uri();//主题url
     global $desination_configs;
 
 
