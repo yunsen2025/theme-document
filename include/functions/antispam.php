@@ -9,20 +9,39 @@ add_filter( 'preprocess_comment', 'nicen_antispam_check' );
 add_action( 'init', 'nicen_antispam_block_banned_visitors', 0 );
 
 function nicen_antispam_get_blocklist() {
+	$custom_emails  = nicen_antispam_parse_lines( nicen_theme_config( 'document_comment_blocked_emails', false ) );
+	$custom_ips     = nicen_antispam_parse_lines( nicen_theme_config( 'document_comment_blocked_ips', false ) );
+	$custom_markers = nicen_antispam_parse_lines( nicen_theme_config( 'document_comment_blocked_keywords', false ) );
+
 	return apply_filters( 'nicen_theme_comment_blocklist', [
 		'emails' => [
 			'36836008@outlook.com',
+			...$custom_emails,
 		],
 		'ips' => [
 			'113.16.16.177',
+			...$custom_ips,
 		],
 		'content_markers' => [
 			'binance.bh',
+			'Thanks for sharing. I read many of your blog posts, cool, your blog is very good.',
+			...$custom_markers,
 		],
 		'permanent_content_markers' => [
 			'www.binance.com',
 		],
 	] );
+}
+
+/** Convert one-value-per-line admin settings into a normalized list. */
+function nicen_antispam_parse_lines( $value ) {
+	$lines = preg_split( '/\r\n|\r|\n/', (string) $value );
+	$lines = array_map( 'trim', $lines );
+	$lines = array_filter( $lines, static function ( $line ) {
+		return $line !== '' && strpos( $line, '#' ) !== 0;
+	} );
+
+	return array_values( array_unique( $lines ) );
 }
 
 function nicen_antispam_get_request_ip() {
@@ -114,7 +133,10 @@ function nicen_antispam_check( $commentdata ) {
 	}
 
 	if ( nicen_antispam_is_blocked( $commentdata, $ip, $blocklist ) ) {
-		wp_die( '评论提交失败。', '评论被拦截', array( 'back_link' => true, 'response' => 403 ) );
+		/* Keep the record in WordPress so it can be reviewed or deleted in Comments. */
+		$commentdata['comment_approved'] = 'spam';
+
+		return $commentdata;
 	}
 
 	// 蜜罐字段检测

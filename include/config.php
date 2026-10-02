@@ -373,6 +373,36 @@ const ADMIN = [
 				]
 			],
 			[
+				"id"     => "document_theme_antispam",
+				'title'  => '评论反垃圾',
+				'fields' => [
+					[
+						'id'       => 'document_comment_blocked_keywords',
+						'title'    => '评论关键词/网址黑名单',
+						'callback' => 'nicen_theme_form_textarea',
+						'args'     => [
+							'tip' => '每行填写一个关键词、句子或网址片段；命中后评论会进入垃圾评论。'
+						]
+					],
+					[
+						'id'       => 'document_comment_blocked_ips',
+						'title'    => '评论 IP 黑名单',
+						'callback' => 'nicen_theme_form_textarea',
+						'args'     => [
+							'tip' => '每行填写一个完整 IP；命中后评论会进入垃圾评论。'
+						]
+					],
+					[
+						'id'       => 'document_comment_blocked_emails',
+						'title'    => '评论邮箱黑名单',
+						'callback' => 'nicen_theme_form_textarea',
+						'args'     => [
+							'tip' => '每行填写一个完整邮箱地址；命中后评论会进入垃圾评论。'
+						]
+					],
+				]
+			],
+			[
 				"id"     => "document_theme_code",
 				'title'  => '页脚设置',
 				'fields' => [
@@ -883,6 +913,12 @@ define( "CONFIG", [
 	//文章通知发件邮箱
 	"document_email_subscribe_open"   => 1,
 	//读者邮箱订阅入口
+	"document_comment_blocked_keywords" => "Thanks for sharing. I read many of your blog posts, cool, your blog is very good.",
+	//评论关键词/网址黑名单，每行一个
+	"document_comment_blocked_ips"      => '',
+	//评论 IP 黑名单，每行一个
+	"document_comment_blocked_emails"   => '',
+	//评论邮箱黑名单，每行一个
 
 	'document_footer_bg_color'   => 'transparent',
 	'document_footer_font_color' => '#262626',
