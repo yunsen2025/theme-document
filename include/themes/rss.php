@@ -6,7 +6,16 @@
  * - 优化摘要：带封面图 + 格式化文本
  */
 
-add_action( 'wp_head', 'feed_links', 2 );
+/**
+ * 主题初始化会先移除 WordPress 默认的 Feed 自动发现钩子。
+ * 在其之后重新注册，避免注册时序导致链接再次被移除。
+ */
+function document_enable_rss_discovery() {
+	add_action( 'wp_head', 'feed_links', 2 );
+	add_action( 'wp_head', 'feed_links_extra', 3 );
+}
+
+add_action( 'after_setup_theme', 'document_enable_rss_discovery', 11 );
 
 add_action( 'rss2_ns', function () {
 	echo 'xmlns:media="http://search.yahoo.com/mrss/" ' . "\n";
