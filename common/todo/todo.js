@@ -689,7 +689,9 @@
         var html = '<div class="todo-child-node" style="--todo-child-depth:' + depth + ';"><div class="todo-child-card' + (todo.completed == 1 ? ' completed' : '') + (blocked ? ' blocked' : '') + '" data-id="' + escapeAttribute(todo.id) + '" data-parent-id="' + parentIdOf(todo) + '" draggable="true">';
         html += '<div class="todo-priority-bar ' + priorityCss(getEffectivePriority(todo)) + '"></div>';
         html += '<div class="todo-checkbox' + (isArchived ? ' disabled' : '') + '"' + (isArchived ? '' : ' onclick="window._todo.toggle(' + actionId + ')"') + '></div>';
-        html += '<div class="todo-child-content"><div class="todo-child-title">' + escapeHtml(todo.title) + '</div><div class="todo-child-meta">';
+        html += '<div class="todo-child-content"><div class="todo-child-title">' + escapeHtml(todo.title) + '</div>';
+        if (todo.notes) html += '<div class="todo-child-notes">' + escapeHtml(todo.notes) + '</div>';
+        html += '<div class="todo-child-meta">';
         html += '<span class="todo-priority-tag ' + priorityCss(getEffectivePriority(todo)) + '">' + priorityLabel(getEffectivePriority(todo)) + '</span>';
         if (isNext && todo.completed != 1) html += '<span class="todo-next-badge">下一步</span>';
         if (blocked) html += '<span class="todo-blocked-tag">等待：' + escapeHtml(deps.join('、')) + '</span>';
@@ -904,6 +906,7 @@
                 html += '<div class="todo-dag-node-accent ' + priorityCss(getEffectivePriority(todo)) + '"></div><div class="todo-dag-node-body">';
                 html += '<div class="todo-dag-node-top"><span class="todo-dag-status ' + status.css + '">' + status.label + '</span><span class="todo-priority-tag ' + priorityCss(getEffectivePriority(todo)) + '">' + priorityLabel(getEffectivePriority(todo)) + '</span></div>';
                 html += '<div class="todo-dag-node-title">' + escapeHtml(todo.title) + '</div>';
+                if (todo.notes) html += '<div class="todo-dag-node-notes">' + escapeHtml(todo.notes) + '</div>';
                 if (dependencies.length) {
                     html += '<div class="todo-dag-node-deps"><span>前置</span><span class="todo-dag-inline-arrow">→</span><span>' + dependencies.map(function (dependency) { return escapeHtml(dependency.title); }).join('、') + '</span></div>';
                 } else {

@@ -402,6 +402,19 @@
     overflow-wrap: anywhere;
 }
 
+.todo-child-notes,
+.todo-dag-node-notes {
+    display: -webkit-box;
+    margin-top: 4px;
+    overflow: hidden;
+    color: var(--theme-text-secondary, rgba(0, 0, 0, 0.62));
+    font-size: var(--theme-text-more-mini-2, 0.62rem);
+    line-height: 1.4;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow-wrap: anywhere;
+}
+
 .todo-child-card.completed .todo-child-title {
     text-decoration: line-through;
 }
@@ -1039,6 +1052,11 @@
     font-weight: 600;
     line-height: 1.45;
     overflow-wrap: anywhere;
+}
+
+.todo-dag-node-notes {
+    margin-top: 5px;
+    color: #718096;
 }
 
 .todo-dag-node-deps {
