@@ -302,7 +302,7 @@
             html += '<option value="' + id + '"' + (selected.indexOf(id) !== -1 ? ' selected' : '') + '>' +
                 Array(row.depth + 1).join('　') + escapeHtml(row.todo.title) + '</option>';
         });
-        return html;
+        return html || '<option value="" disabled>请先添加其他任务</option>';
     }
     function populateParentSelect() {
         var select = document.getElementById('todo-parent');

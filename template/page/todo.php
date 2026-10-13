@@ -58,13 +58,13 @@ get_header();
                         </div>
                         <label class="todo-add-field" for="todo-parent">
                             <span>归属任务</span>
-                            <select id="todo-parent" class="todo-add-select">
+                            <select id="todo-parent" class="todo-add-select" title="第一条任务请保留为顶层任务">
                                 <option value="">顶层任务</option>
                             </select>
                         </label>
                         <label class="todo-add-field todo-add-dependencies-field" for="todo-dependencies">
                             <span>前置任务（可多选）</span>
-                            <select id="todo-dependencies" class="todo-add-select todo-dependencies-select" multiple size="2"></select>
+                            <select id="todo-dependencies" class="todo-add-select todo-dependencies-select" title="先添加其他任务后再选择前置任务" multiple size="2"></select>
                         </label>
                     </div>
                     <label class="todo-add-field todo-add-notes" for="todo-notes">
