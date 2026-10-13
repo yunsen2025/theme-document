@@ -13,6 +13,8 @@ function document_todo_create_table() {
 	$sql = "CREATE TABLE $table_name (
 		id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 		title varchar(500) NOT NULL DEFAULT '',
+		notes text DEFAULT NULL,
+		parent_id bigint(20) unsigned DEFAULT NULL,
 		completed tinyint(1) NOT NULL DEFAULT 0,
 		archived tinyint(1) NOT NULL DEFAULT 0,
 		archived_at datetime DEFAULT NULL,
@@ -24,6 +26,7 @@ function document_todo_create_table() {
 		updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 		PRIMARY KEY (id),
 		KEY idx_completed (completed),
+		KEY idx_parent_id (parent_id),
 		KEY idx_archived (archived),
 		KEY idx_priority (priority),
 		KEY idx_importance (importance),
@@ -37,6 +40,26 @@ function document_todo_create_table() {
 /* 主题激活时创建表 */
 add_action( 'after_switch_theme', 'document_todo_create_table' );
 
+/* 子任务依赖关系：task_id 依赖 depends_on_id，允许多前置任务但禁止形成环。 */
+function document_todo_create_dependencies_table() {
+	global $wpdb;
+	$table_name      = $wpdb->prefix . 'document_todo_edges';
+	$charset_collate = $wpdb->get_charset_collate();
+
+	$sql = "CREATE TABLE $table_name (
+		task_id bigint(20) unsigned NOT NULL,
+		depends_on_id bigint(20) unsigned NOT NULL,
+		created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (task_id, depends_on_id),
+		KEY idx_task_id (task_id),
+		KEY idx_depends_on_id (depends_on_id)
+	) $charset_collate;";
+
+	require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+	dbDelta( $sql );
+}
+add_action( 'after_switch_theme', 'document_todo_create_dependencies_table' );
+
 /* 如果表不存在则自动创建 */
 function document_todo_maybe_create_table() {
 	global $wpdb;
@@ -46,6 +69,15 @@ function document_todo_maybe_create_table() {
 	}
 }
 add_action( 'init', 'document_todo_maybe_create_table' );
+
+function document_todo_maybe_create_dependencies_table() {
+	global $wpdb;
+	$table_name = $wpdb->prefix . 'document_todo_edges';
+	if ( $wpdb->get_var( "SHOW TABLES LIKE '$table_name'" ) !== $table_name ) {
+		document_todo_create_dependencies_table();
+	}
+}
+add_action( 'init', 'document_todo_maybe_create_dependencies_table', 20 );
 
 /* 升级：为已有表添加 importance 字段 */
 function document_todo_maybe_add_importance() {
@@ -72,6 +104,28 @@ function document_todo_maybe_add_archive() {
 	}
 }
 add_action( 'init', 'document_todo_maybe_add_archive' );
+
+/* 升级：为已有表添加树结构和备注字段 */
+function document_todo_maybe_add_hierarchy() {
+	global $wpdb;
+	$table_name = $wpdb->prefix . 'document_todos';
+
+	$notes_column = $wpdb->get_results( "SHOW COLUMNS FROM $table_name LIKE 'notes'" );
+	if ( empty( $notes_column ) ) {
+		$wpdb->query( "ALTER TABLE $table_name ADD COLUMN notes text DEFAULT NULL AFTER title" );
+	}
+
+	$parent_column = $wpdb->get_results( "SHOW COLUMNS FROM $table_name LIKE 'parent_id'" );
+	if ( empty( $parent_column ) ) {
+		$wpdb->query( "ALTER TABLE $table_name ADD COLUMN parent_id bigint(20) unsigned DEFAULT NULL AFTER notes" );
+	}
+
+	$parent_index = $wpdb->get_results( "SHOW INDEX FROM $table_name WHERE Key_name = 'idx_parent_id'" );
+	if ( empty( $parent_index ) ) {
+		$wpdb->query( "ALTER TABLE $table_name ADD KEY idx_parent_id (parent_id)" );
+	}
+}
+add_action( 'init', 'document_todo_maybe_add_hierarchy' );
 
 /** 已完成且截止日期过去至少七天的事项自动归档；手动恢复的事项除外。 */
 function document_todo_auto_archive() {
