@@ -401,7 +401,7 @@
 /* 列表 */
 .todo-list {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
     gap: 12px;
     padding: 0;
     margin: 0;
@@ -409,10 +409,10 @@
     width: 100%;
 }
 
-/* 树视图：普通任务保持方块，有子任务的主卡片按内容自然增高。 */
+/* 树视图：普通任务保持紧凑矩形，有子任务的主卡片按内容自然增高。 */
 .todo-list.todo-tree-list {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
     gap: 12px;
     align-items: start;
     width: 100%;
@@ -547,8 +547,8 @@ body.todo-dragging .todo-root-drop-zone {
 }
 
 .todo-main-card.single-task > .todo-item {
-    aspect-ratio: 1 / 1;
-    min-height: 0;
+    aspect-ratio: auto;
+    min-height: 156px;
 }
 
 .todo-main-card.has-children > .todo-item {
@@ -696,7 +696,7 @@ body.todo-dragging .todo-root-drop-zone {
 .todo-item {
     display: grid;
     grid-template-columns: 4px minmax(0, 1fr);
-    aspect-ratio: 1 / 1;
+    aspect-ratio: auto;
     box-sizing: border-box;
     min-width: 0;
     align-items: stretch;
@@ -1849,7 +1849,7 @@ body.todo-dragging .todo-root-drop-zone {
     }
 
     .todo-main-card.single-task > .todo-item {
-        aspect-ratio: 1 / 1;
+        aspect-ratio: auto;
     }
 
     .todo-add-settings {
@@ -1964,11 +1964,11 @@ body.todo-dragging .todo-root-drop-zone {
 }
 
 .todo-main-card > .todo-item {
-    min-height: 176px;
+    min-height: 156px;
 }
 
 .todo-main-card.single-task > .todo-item {
-    min-height: 220px;
+    min-height: 156px;
 }
 
 .todo-main-card.has-children > .todo-item {
@@ -2116,7 +2116,7 @@ body.todo-dragging .todo-root-drop-zone {
     }
 
     .todo-main-card.single-task > .todo-item {
-        min-height: 190px;
+        min-height: 148px;
     }
 
     .todo-main-card > .todo-child-list {
