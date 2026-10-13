@@ -56,7 +56,21 @@ get_header();
                                 <span class="importance-label" id="todo-importance-label">★★★☆☆</span>
                             </div>
                         </div>
+                        <label class="todo-add-field" for="todo-parent">
+                            <span>归属任务</span>
+                            <select id="todo-parent" class="todo-add-select">
+                                <option value="">顶层任务</option>
+                            </select>
+                        </label>
+                        <label class="todo-add-field todo-add-dependencies-field" for="todo-dependencies">
+                            <span>前置任务（可多选）</span>
+                            <select id="todo-dependencies" class="todo-add-select todo-dependencies-select" multiple size="2"></select>
+                        </label>
                     </div>
+                    <label class="todo-add-field todo-add-notes" for="todo-notes">
+                        <span>备注</span>
+                        <textarea id="todo-notes" class="todo-add-textarea" rows="2" placeholder="补充背景、下一步或想法（可选）"></textarea>
+                    </label>
                     <button id="todo-add-btn" class="todo-add-btn"><span aria-hidden="true">+</span> 添加</button>
                 </div>
 
@@ -73,6 +87,8 @@ get_header();
                     <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
                         <div class="todo-views">
                             <button class="todo-view-btn" data-view="list">&#128196; 列表</button>
+                            <button class="todo-view-btn" data-view="focus">&#127919; 专注</button>
+                            <button class="todo-view-btn" data-view="dag">&#128279; 依赖图</button>
                             <button class="todo-view-btn active" data-view="chart">&#128200; 矩阵</button>
                         </div>
                         <div class="todo-filters">
@@ -89,6 +105,9 @@ get_header();
                 <div id="todo-list" class="todo-list" style="display:none;">
                     <div class="todo-loading">加载中...</div>
                 </div>
+
+                <!-- DAG 依赖视图 -->
+                <div id="todo-dag-wrap" class="todo-dag-wrap" style="display:none;"></div>
 
                 <!-- 2D矩阵视图 + 侧边栏 -->
                 <div id="todo-matrix-wrap" class="todo-matrix-wrap">

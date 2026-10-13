@@ -8,6 +8,7 @@
     'use strict';
 
     const STORAGE_KEY = 'document_todos';
+    const COLLAPSED_KEY = 'document_todo_collapsed';
     const AJAX_URL = window.HOME + '/wp-admin/admin-ajax.php';
 
     let todos = [];
@@ -15,6 +16,9 @@
     let currentView = 'chart';
     let editingId = null;
     let dragItem = null;
+    let pendingParentId = '';
+    let pendingDependencies = [];
+    let collapsedIds = loadCollapsedIds();
 
     // Chart state
     let chartCanvas = null;
@@ -26,6 +30,8 @@
     /* ========== LocalStorage ========== */
     function saveToLocal() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(todos)); } catch (e) { } }
     function loadFromLocal() { try { var d = localStorage.getItem(STORAGE_KEY); return d ? JSON.parse(d) : []; } catch (e) { return []; } }
+    function loadCollapsedIds() { try { var d = localStorage.getItem(COLLAPSED_KEY); return d ? JSON.parse(d) : {}; } catch (e) { return {}; } }
+    function saveCollapsedIds() { try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify(collapsedIds)); } catch (e) { } }
 
     /* ========== AJAX ========== */
     function ajax(action, data) {
@@ -137,6 +143,208 @@
         return Math.min(5, Math.max(imp, boost));
     }
 
+    /* ========== 任务树 ========== */
+    function sameId(a, b) { return String(a) === String(b); }
+    function parentIdOf(todo) { return todo && todo.parent_id ? String(todo.parent_id) : ''; }
+    function dependencyIdsOf(todo) {
+        return Array.isArray(todo && todo.dependencies) ? todo.dependencies.map(String) : [];
+    }
+    function dependenciesOf(todo) {
+        return dependencyIdsOf(todo).map(function (id) {
+            return todos.find(function (item) { return sameId(item.id, id); });
+        }).filter(Boolean);
+    }
+    function isBlocked(todo) {
+        return todo.completed != 1 && dependenciesOf(todo).some(function (dependency) {
+            return dependency.completed != 1;
+        });
+    }
+    function dependencyNames(todo) {
+        return dependenciesOf(todo).filter(function (dependency) { return dependency.completed != 1; }).map(function (dependency) {
+            return dependency.title;
+        });
+    }
+    function childrenOf(parentId, source) {
+        var key = parentId ? String(parentId) : '';
+        return (source || todos).filter(function (todo) {
+            return parentIdOf(todo) === key;
+        }).sort(function (a, b) {
+            var order = (parseInt(a.sort_order) || 0) - (parseInt(b.sort_order) || 0);
+            return order || String(b.created_at || '').localeCompare(String(a.created_at || '')) || Number(b.id) - Number(a.id);
+        });
+    }
+    function childPriority(todo) {
+        if (todo.completed == 1) return -1;
+        return isBlocked(todo) ? 1 : 0;
+    }
+    function childPreview(todo) {
+        return childrenOf(todo.id, todos).filter(function (child) { return child.archived != 1; }).sort(function (a, b) {
+            return childPriority(a) - childPriority(b) || priorityLevel(getEffectivePriority(b)) - priorityLevel(getEffectivePriority(a)) || (parseInt(a.sort_order) || 0) - (parseInt(b.sort_order) || 0);
+        });
+    }
+    function nextAvailableChild(todo) {
+        return childPreview(todo).find(function (child) { return child.completed != 1 && !isBlocked(child); }) || null;
+    }
+    function treeRows(source, respectCollapsed) {
+        var rows = [], used = {};
+        source = source || todos;
+        function visit(parentId, depth) {
+            childrenOf(parentId, source).forEach(function (todo) {
+                var key = String(todo.id);
+                if (used[key]) return;
+                used[key] = true;
+                rows.push({ todo: todo, depth: depth });
+                if (!respectCollapsed || !collapsedIds[key]) visit(key, depth + 1);
+            });
+        }
+        visit('', 0);
+        source.forEach(function (todo) {
+            if (!used[String(todo.id)]) {
+                used[String(todo.id)] = true;
+                rows.push({ todo: todo, depth: 0 });
+                if (!respectCollapsed || !collapsedIds[String(todo.id)]) visit(String(todo.id), 1);
+            }
+        });
+        return rows;
+    }
+    function descendantLeaves(todoId, source) {
+        var result = [], seen = {};
+        function visit(parentId) {
+            childrenOf(parentId, source).forEach(function (child) {
+                var key = String(child.id);
+                if (seen[key]) return;
+                seen[key] = true;
+                var children = childrenOf(child.id, source);
+                if (children.length) visit(child.id);
+                else result.push(child);
+            });
+        }
+        visit(todoId);
+        return result;
+    }
+    function descendantTasks(todoId, source) {
+        var result = [], seen = {};
+        function visit(parentId) {
+            childrenOf(parentId, source).forEach(function (child) {
+                var key = String(child.id);
+                if (seen[key]) return;
+                seen[key] = true;
+                result.push(child);
+                visit(child.id);
+            });
+        }
+        visit(todoId);
+        return result;
+    }
+    function treeProgress(todo) {
+        var leaves = descendantLeaves(todo.id, todos);
+        if (!leaves.length) return null;
+        var done = leaves.filter(function (leaf) { return leaf.completed == 1; }).length;
+        return { done: done, total: leaves.length };
+    }
+    function priorityLevel(priority) { return (PRIORITY_MAP[priority] || PRIORITY_MAP.thisweek).level; }
+    function treePriority(todo) {
+        var descendants = descendantTasks(todo.id, todos).filter(function (child) { return child.archived != 1 && child.completed != 1; });
+        if (!descendants.length) return getEffectivePriority(todo);
+        return descendants.reduce(function (best, child) {
+            return priorityLevel(getEffectivePriority(child)) > priorityLevel(best) ? getEffectivePriority(child) : best;
+        }, 'anytime');
+    }
+    function hasChildren(todo) { return childrenOf(todo.id, todos).length > 0; }
+    function previousSibling(todo) {
+        var siblings = childrenOf(parentIdOf(todo), todos.filter(function (item) { return item.archived != 1; }));
+        var index = siblings.findIndex(function (item) { return sameId(item.id, todo.id); });
+        return index > 0 ? siblings[index - 1] : null;
+    }
+    function breadcrumb(todo) {
+        var parts = [], current = todo, seen = {};
+        while (current && !seen[String(current.id)]) {
+            seen[String(current.id)] = true;
+            parts.unshift(current.title);
+            current = todos.find(function (item) { return sameId(item.id, current.parent_id); });
+        }
+        parts.pop();
+        return parts.length ? parts.join(' / ') : '';
+    }
+    function parentOptions(currentId, selectedId) {
+        var excluded = {};
+        if (currentId) {
+            excluded[String(currentId)] = true;
+            descendantLeaves(currentId, todos).forEach(function (leaf) { excluded[String(leaf.id)] = true; });
+            function excludeBranches(id) {
+                childrenOf(id, todos).forEach(function (child) {
+                    excluded[String(child.id)] = true;
+                    excludeBranches(child.id);
+                });
+            }
+            excludeBranches(currentId);
+        }
+        var html = '<option value="">顶层任务</option>';
+        treeRows(todos.filter(function (todo) { return todo.archived != 1; }), false).forEach(function (row) {
+            var id = String(row.todo.id);
+            if (excluded[id]) return;
+            html += '<option value="' + id + '"' + (sameId(id, selectedId) ? ' selected' : '') + '>' +
+                Array(row.depth + 1).join('　') + escapeHtml(row.todo.title) + '</option>';
+        });
+        return html;
+    }
+    function dependencyOptions(currentId, selectedIds) {
+        var selected = (selectedIds || []).map(String);
+        var excluded = {};
+        if (currentId) {
+            excluded[String(currentId)] = true;
+            descendantTasks(currentId, todos).forEach(function (task) { excluded[String(task.id)] = true; });
+        }
+        var html = '';
+        treeRows(todos.filter(function (todo) { return todo.archived != 1; }), false).forEach(function (row) {
+            var id = String(row.todo.id);
+            if (excluded[id]) return;
+            html += '<option value="' + id + '"' + (selected.indexOf(id) !== -1 ? ' selected' : '') + '>' +
+                Array(row.depth + 1).join('　') + escapeHtml(row.todo.title) + '</option>';
+        });
+        return html;
+    }
+    function populateParentSelect() {
+        var select = document.getElementById('todo-parent');
+        if (select) select.innerHTML = parentOptions('', pendingParentId);
+    }
+    function populateDependenciesSelect() {
+        var select = document.getElementById('todo-dependencies');
+        if (select) select.innerHTML = dependencyOptions('', pendingDependencies);
+    }
+    function setNewParent(id) {
+        pendingParentId = id ? String(id) : '';
+        populateParentSelect();
+        var input = document.getElementById('todo-input');
+        if (input) { input.focus(); input.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    }
+    function addChild(id) { setNewParent(id); }
+    function toggleCollapse(id) {
+        var key = String(id);
+        if (collapsedIds[key]) delete collapsedIds[key]; else collapsedIds[key] = true;
+        saveCollapsedIds(); render();
+    }
+    function updateParent(todo, parentId) {
+        var oldParent = parentIdOf(todo);
+        todo.parent_id = parentId ? String(parentId) : null;
+        todo.sort_order = -1;
+        saveToLocal(); render();
+        ajax('todo_update', { id: todo.id, parent_id: parentId || '' }).catch(function () {
+            todo.parent_id = oldParent || null;
+            saveToLocal(); render();
+        });
+    }
+    function indentTodo(id) {
+        var todo = todos.find(function (item) { return sameId(item.id, id); });
+        var previous = todo && previousSibling(todo);
+        if (todo && previous) updateParent(todo, previous.id);
+    }
+    function outdentTodo(id) {
+        var todo = todos.find(function (item) { return sameId(item.id, id); });
+        var parent = todo && todos.find(function (item) { return sameId(item.id, todo.parent_id); });
+        if (todo && parent) updateParent(todo, parent.parent_id || '');
+    }
+
     /* ========== CRUD ========== */
     function addTodo() {
         var input = document.getElementById('todo-input');
@@ -145,18 +353,23 @@
         var priority = document.getElementById('todo-priority').value;
         var dueDate = document.getElementById('todo-date').value;
         var importance = parseInt(document.getElementById('todo-importance').value) || 3;
+        var parentId = document.getElementById('todo-parent').value;
+        var notes = document.getElementById('todo-notes').value.trim();
+        var dependenciesEl = document.getElementById('todo-dependencies');
+        var dependencies = dependenciesEl ? Array.from(dependenciesEl.selectedOptions).map(function (option) { return option.value; }) : [];
 
         var tempId = 'temp_' + Date.now();
         var tempTodo = {
             id: tempId, title: title, completed: 0, archived: 0, priority: priority,
             importance: importance, due_date: dueDate || null, sort_order: 0,
+            parent_id: parentId || null, notes: notes, dependencies: dependencies,
             created_at: new Date().toISOString().slice(0, 19).replace('T', ' '),
             updated_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
         };
         todos.unshift(tempTodo); saveToLocal(); render();
-        input.value = ''; document.getElementById('todo-date').value = ''; input.focus();
+        input.value = ''; document.getElementById('todo-date').value = ''; document.getElementById('todo-notes').value = ''; pendingParentId = ''; pendingDependencies = []; populateParentSelect(); populateDependenciesSelect(); input.focus();
 
-        ajax('todo_create', { title: title, priority: priority, due_date: dueDate, importance: importance })
+        ajax('todo_create', { title: title, priority: priority, due_date: dueDate, importance: importance, parent_id: parentId, notes: notes, dependencies: JSON.stringify(dependencies) })
             .then(function (row) {
                 var idx = todos.findIndex(function (t) { return t.id === tempId; });
                 if (idx !== -1) todos[idx] = row;
@@ -203,18 +416,28 @@
 
     function deleteTodo(id) {
         if (!confirm('确定删除这条待办？')) return;
+        var target = todos.find(function (todo) { return sameId(todo.id, id); });
+        var promotedParent = target ? parentIdOf(target) : '';
+        todos.forEach(function (todo) {
+            if (sameId(todo.parent_id, id)) todo.parent_id = promotedParent || null;
+            todo.dependencies = dependencyIdsOf(todo).filter(function (dependencyId) { return !sameId(dependencyId, id); });
+        });
         todos = todos.filter(function (t) { return t.id != id; });
         saveToLocal(); render();
         ajax('todo_delete', { id: id });
     }
 
     function startEdit(id) { editingId = id; render(); var el = document.getElementById('edit-title-' + id); if (el) { el.focus(); el.select(); } }
+    function editFromDag(id) { setView('list'); startEdit(id); }
 
     function saveEdit(id) {
         var el = document.getElementById('edit-title-' + id);
         var priorityEl = document.getElementById('edit-priority-' + id);
         var dateEl = document.getElementById('edit-date-' + id);
         var impEl = document.getElementById('edit-importance-' + id);
+        var notesEl = document.getElementById('edit-notes-' + id);
+        var parentEl = document.getElementById('edit-parent-' + id);
+        var dependenciesEl = document.getElementById('edit-dependencies-' + id);
         var todo = todos.find(function (t) { return t.id == id; });
         if (!todo) return;
         var data = { id: id };
@@ -223,6 +446,12 @@
         if (priorityEl) { todo.priority = priorityEl.value; data.priority = priorityEl.value; }
         if (dateEl) { todo.due_date = dateEl.value || null; data.due_date = dateEl.value || ''; }
         if (impEl) { todo.importance = parseInt(impEl.value) || 3; data.importance = todo.importance; }
+        if (notesEl) { todo.notes = notesEl.value.trim(); data.notes = todo.notes; }
+        if (parentEl) { todo.parent_id = parentEl.value || null; data.parent_id = parentEl.value || ''; }
+        if (dependenciesEl) {
+            todo.dependencies = Array.from(dependenciesEl.selectedOptions).map(function (option) { return option.value; });
+            data.dependencies = JSON.stringify(todo.dependencies);
+        }
         editingId = null; saveToLocal(); render();
         ajax('todo_update', data);
     }
@@ -239,7 +468,8 @@
     function setView(v) {
         currentView = v;
         document.querySelectorAll('.todo-view-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.view === v); });
-        document.getElementById('todo-list').style.display = v === 'list' ? 'grid' : 'none';
+        document.getElementById('todo-list').style.display = (v === 'list' || v === 'focus') ? '' : 'none';
+        document.getElementById('todo-dag-wrap').style.display = v === 'dag' ? '' : 'none';
         document.getElementById('todo-matrix-wrap').style.display = v === 'chart' ? '' : 'none';
         // 两种视图都保留宽屏空间，列表可排列多张卡片。
         var mainMain = document.querySelector('.main-main');
@@ -250,21 +480,31 @@
     /* ========== 拖拽 ========== */
     function handleDragStart(e) { dragItem = e.currentTarget; dragItem.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }
     function handleDragOver(e) {
-        e.preventDefault(); var target = e.target.closest('.todo-item');
-        if (target && target !== dragItem) {
-            var list = document.getElementById('todo-list');
-            var items = Array.from(list.children);
-            if (items.indexOf(dragItem) < items.indexOf(target)) list.insertBefore(dragItem, target.nextSibling);
-            else list.insertBefore(dragItem, target);
+        e.preventDefault();
+        var target = e.target.closest('.todo-item, .todo-child-card');
+        var isChildDrag = dragItem && dragItem.classList.contains('todo-child-card');
+        var dragContainer = isChildDrag ? dragItem : dragItem.closest('.todo-main-card');
+        var targetContainer = target && (isChildDrag ? target : target.closest('.todo-main-card'));
+        var list = dragContainer && dragContainer.parentElement;
+        if (target && target !== dragItem && target.dataset.parentId === dragItem.dataset.parentId && targetContainer && targetContainer.parentElement === list) {
+            var items = Array.from(list.children).filter(function (item) { return isChildDrag ? item.matches('.todo-child-card') : item.matches('.todo-main-card'); });
+            if (items.indexOf(dragContainer) < items.indexOf(targetContainer)) list.insertBefore(dragContainer, targetContainer.nextSibling);
+            else list.insertBefore(dragContainer, targetContainer);
         }
     }
     function handleDragEnd() {
         if (dragItem) dragItem.classList.remove('dragging'); dragItem = null;
         var list = document.getElementById('todo-list');
         var orders = [];
-        Array.from(list.children).forEach(function (item, idx) {
+        var counters = {};
+        Array.from(list.querySelectorAll('.todo-item[data-id], .todo-child-card[data-id]')).forEach(function (item) {
             var id = item.dataset.id; var todo = todos.find(function (t) { return t.id == id; });
-            if (todo) { todo.sort_order = idx; orders.push({ id: id, sort_order: idx }); }
+            if (todo) {
+                var parentId = item.dataset.parentId || '';
+                counters[parentId] = counters[parentId] || 0;
+                todo.sort_order = counters[parentId]++;
+                orders.push({ id: id, parent_id: parentId, sort_order: todo.sort_order });
+            }
         });
         saveToLocal(); ajax('todo_reorder', { orders: JSON.stringify(orders) });
     }
@@ -292,8 +532,12 @@
         document.getElementById('todo-stats').innerHTML = '<span>共 ' + total + ' 项</span><span>待完成 ' + (total - done) + '</span><span>已完成 ' + done + '</span><span>已归档 ' + archived + '</span><span>' + percent + '%</span>';
         var pb = document.getElementById('todo-progress-bar'); if (pb) pb.style.width = percent + '%';
         document.querySelectorAll('.todo-filter-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.filter === currentFilter); });
+        populateParentSelect();
+        populateDependenciesSelect();
 
         if (currentView === 'list') renderList(filtered);
+        else if (currentView === 'focus') renderFocus(filtered);
+        else if (currentView === 'dag') renderDag(filtered);
         else { renderChart(filtered); renderSidebar(filtered); }
     }
 
@@ -334,7 +578,7 @@
                 html += '<div class="todo-sidebar-empty">- 无 -</div>';
             } else {
                 g.items.forEach(function (todo) {
-                    var effP = getEffectivePriority(todo);
+                    var effP = hasChildren(todo) ? treePriority(todo) : getEffectivePriority(todo);
                     var css = priorityCss(effP);
                     html += '<div class="todo-sidebar-item">';
                     html += '<span class="todo-sidebar-dot ' + css + '"></span>';
@@ -362,77 +606,345 @@
         sidebar.innerHTML = html;
     }
 
-    function renderList(filtered) {
-        var listEl = document.getElementById('todo-list');
-        if (filtered.length === 0) {
-            listEl.innerHTML = '<div class="todo-empty"><div class="todo-empty-icon">&#128203;</div>' +
-                (currentFilter === 'all' ? '暂无待办事项，添加一个吧' : currentFilter === 'active' ? '所有任务都完成了！' : currentFilter === 'completed' ? '还没有已完成的待办' : '还没有已归档的事项') + '</div>';
-            return;
-        }
-        var html = '';
-        filtered.forEach(function (todo) {
-            var isEditing = editingId == todo.id;
-            var effPriority = getEffectivePriority(todo);
-            var effCss = priorityCss(effPriority);
-            var upgraded = effPriority !== (todo.priority || 'thisweek') && todo.completed != 1;
-
-            var isArchived = todo.archived == 1;
-            html += '<div class="todo-item' + (isEditing ? ' editing' : '') + (todo.completed == 1 ? ' completed' : '') + (isArchived ? ' archived' : '') + (isPomodoring(todo.id) ? ' pomodoro-active' : '') + '" data-id="' + todo.id + '" draggable="' + !isEditing + '">';
-            html += '<div class="todo-priority-bar ' + effCss + '"></div>';
-            html += '<div class="todo-body">';
-            html += '<div class="todo-checkbox' + (isArchived ? ' disabled' : '') + '"' + (isArchived ? '' : ' onclick="window._todo.toggle(' + todo.id + ')"') + '></div>';
-            html += '<div class="todo-content">';
-            if (isEditing) {
-                html += '<input class="todo-title-input" id="edit-title-' + todo.id + '" value="' + escapeHtml(todo.title) + '" onkeydown="if(event.key===\'Enter\')window._todo.saveEdit(' + todo.id + ');if(event.key===\'Escape\')window._todo.cancelEdit()">';
-                html += '<div class="todo-edit-inline">';
-                html += '<select id="edit-priority-' + todo.id + '">';
-                html += '<option value="urgent"' + (todo.priority === 'urgent' || todo.priority === 'high' ? ' selected' : '') + '>紧急</option>';
-                html += '<option value="twodays"' + (todo.priority === 'twodays' ? ' selected' : '') + '>这两天</option>';
-                html += '<option value="thisweek"' + (todo.priority === 'thisweek' || todo.priority === 'medium' ? ' selected' : '') + '>这周处理</option>';
-                html += '<option value="anytime"' + (todo.priority === 'anytime' || todo.priority === 'low' ? ' selected' : '') + '>随时可以</option>';
-                html += '</select>';
-                html += '<select id="edit-importance-' + todo.id + '">';
-                for (var i = 5; i >= 1; i--) html += '<option value="' + i + '"' + (parseInt(todo.importance) === i ? ' selected' : '') + '>' + importanceStars(i) + '</option>';
-                html += '</select>';
-                html += '<input type="date" id="edit-date-' + todo.id + '" value="' + (todo.due_date || '') + '">';
-                html += '<button class="todo-action-btn" onclick="window._todo.saveEdit(' + todo.id + ')" title="保存">&#10003;</button>';
-                html += '<button class="todo-action-btn" onclick="window._todo.cancelEdit()" title="取消">&#10005;</button>';
-                html += '</div>';
+    function renderTaskCard(todo, depth, focusMode) {
+        var isEditing = editingId == todo.id;
+        var children = childrenOf(todo.id, todos);
+        var hasChildTasks = children.length > 0;
+        var treeP = hasChildTasks ? treePriority(todo) : getEffectivePriority(todo);
+        var effCss = priorityCss(treeP);
+        var upgraded = treeP !== (todo.priority || 'thisweek') && todo.completed != 1;
+        var isArchived = todo.archived == 1;
+        var previous = previousSibling(todo);
+        var itemId = todo.id;
+        var actionId = /^\d+$/.test(String(itemId)) ? String(itemId) : "'" + escapeAttribute(itemId) + "'";
+        var html = '<div class="todo-item todo-tree-item' + (isEditing ? ' editing' : '') + (todo.completed == 1 ? ' completed' : '') + (isArchived ? ' archived' : '') + (collapsedIds[String(itemId)] ? ' collapsed' : '') + (isPomodoring(itemId) ? ' pomodoro-active' : '') + '" data-id="' + itemId + '" data-parent-id="' + parentIdOf(todo) + '" style="--todo-depth:' + (depth || 0) + ';" draggable="' + (!isEditing && !focusMode) + '">';
+        html += '<div class="todo-priority-bar ' + effCss + '"></div><div class="todo-body">';
+        html += '<div class="todo-checkbox' + (isArchived ? ' disabled' : '') + '"' + (isArchived ? '' : ' onclick="window._todo.toggle(' + actionId + ')"') + '></div>';
+        html += '<div class="todo-content">';
+        if (isEditing) {
+            html += '<input class="todo-title-input" id="edit-title-' + itemId + '" value="' + escapeAttribute(todo.title) + '" onkeydown="if(event.key===\'Enter\')window._todo.saveEdit(' + actionId + ');if(event.key===\'Escape\')window._todo.cancelEdit()">';
+            html += '<div class="todo-edit-inline">';
+            html += '<select id="edit-priority-' + itemId + '"><option value="urgent"' + (todo.priority === 'urgent' || todo.priority === 'high' ? ' selected' : '') + '>紧急</option><option value="twodays"' + (todo.priority === 'twodays' ? ' selected' : '') + '>这两天</option><option value="thisweek"' + (todo.priority === 'thisweek' || todo.priority === 'medium' ? ' selected' : '') + '>这周处理</option><option value="anytime"' + (todo.priority === 'anytime' || todo.priority === 'low' ? ' selected' : '') + '>随时可以</option></select>';
+            html += '<select id="edit-importance-' + itemId + '">';
+            for (var i = 5; i >= 1; i--) html += '<option value="' + i + '"' + (parseInt(todo.importance) === i ? ' selected' : '') + '>' + importanceStars(i) + '</option>';
+            html += '</select><input type="date" id="edit-date-' + itemId + '" value="' + escapeAttribute(todo.due_date || '') + '">';
+            html += '<select id="edit-parent-' + itemId + '">' + parentOptions(itemId, parentIdOf(todo)) + '</select>';
+            html += '<select id="edit-dependencies-' + itemId + '" class="todo-dependencies-select" multiple size="2">' + dependencyOptions(itemId, dependencyIdsOf(todo)) + '</select>';
+            html += '</div><textarea class="todo-edit-notes" id="edit-notes-' + itemId + '" rows="2" placeholder="备注">' + escapeHtml(todo.notes || '') + '</textarea>';
+            html += '<div class="todo-edit-actions"><button class="todo-action-btn" onclick="window._todo.saveEdit(' + actionId + ')" title="保存">&#10003;</button><button class="todo-action-btn" onclick="window._todo.cancelEdit()" title="取消">&#10005;</button></div>';
+        } else {
+            if (focusMode) {
+                var path = breadcrumb(todo);
+                if (path) html += '<div class="todo-breadcrumb">' + escapeHtml(path) + '</div>';
+            }
+            html += '<div class="todo-title">' + escapeHtml(todo.title) + '</div>';
+            if (todo.notes) html += '<div class="todo-notes-preview">' + escapeHtml(todo.notes) + '</div>';
+            html += '<div class="todo-meta"><span class="todo-priority-tag ' + effCss + '">' + priorityLabel(treeP) + (upgraded ? ' ↑' : '') + '</span>';
+            if (hasChildTasks) {
+                var progress = treeProgress(todo);
+                var nextChild = nextAvailableChild(todo);
+                if (progress) html += '<span class="todo-progress-tag">' + progress.done + ' / ' + progress.total + ' 已完成</span>';
+                if (treeP !== (todo.priority || 'thisweek')) html += '<span class="todo-inherited-priority">子任务最高：' + priorityLabel(treeP) + '</span>';
+                if (nextChild) html += '<span class="todo-next-badge">下一步：' + escapeHtml(nextChild.title) + '</span>';
             } else {
-                html += '<div class="todo-title">' + escapeHtml(todo.title) + '</div>';
-                html += '<div class="todo-meta">';
-                html += '<span class="todo-priority-tag ' + effCss + '">' + priorityLabel(effPriority);
-                if (upgraded) html += ' ↑';
-                html += '</span>';
                 html += '<span class="todo-importance-tag">' + importanceStars(todo.importance) + '</span>';
-                html += pomodoroCountHtml(todo.id);
-                if (todo.due_date) {
-                    html += '<span class="todo-due"><span class="todo-due-icon">&#128197;</span>' + formatDate(todo.due_date) + '</span>';
-                    html += getCountdownHtml(todo);
-                }
-                html += '</div>';
+            }
+            html += pomodoroCountHtml(itemId);
+            if (todo.due_date) html += '<span class="todo-due"><span class="todo-due-icon">&#128197;</span>' + formatDate(todo.due_date) + '</span>' + getCountdownHtml(todo);
+            html += '</div>';
+        }
+        html += '</div>';
+        if (!isEditing) {
+            html += '<div class="todo-actions">';
+            if (hasChildTasks) html += '<button class="todo-action-btn collapse" onclick="window._todo.collapse(' + actionId + ')" title="' + (collapsedIds[String(itemId)] ? '展开子任务' : '折叠子任务') + '">' + (collapsedIds[String(itemId)] ? '&#9656;' : '&#9662;') + '</button>';
+            if (!isArchived) {
+                html += '<button class="todo-action-btn child" onclick="window._todo.addChild(' + actionId + ')" title="新建子任务">&#8627;</button>';
+                if (parentIdOf(todo)) html += '<button class="todo-action-btn" onclick="window._todo.outdent(' + actionId + ')" title="提升层级">&#8676;</button>';
+                if (previous) html += '<button class="todo-action-btn" onclick="window._todo.indent(' + actionId + ')" title="降低层级">&#8677;</button>';
+            }
+            if (isArchived) html += '<button class="todo-action-btn restore" onclick="window._todo.restore(' + actionId + ')" title="恢复到列表">&#8635;</button>';
+            else {
+                if (todo.completed != 1) html += '<button class="todo-action-btn pomodoro" onclick="window._todo.startPomodoro(' + actionId + ')" title="番茄钟">&#9654;</button>';
+                html += '<button class="todo-action-btn" onclick="window._todo.startEdit(' + actionId + ')" title="编辑">&#9998;</button><button class="todo-action-btn archive" onclick="window._todo.archive(' + actionId + ')" title="归档">&#128451;</button>';
+            }
+            html += '<button class="todo-action-btn delete" onclick="window._todo.deleteTodo(' + actionId + ')" title="删除">&#128465;</button></div>';
+        }
+        return html + '</div></div>';
+    }
+
+    function renderChildCard(todo, isNext, depth) {
+        depth = depth || 1;
+        if (editingId == todo.id) {
+            return '<div class="todo-child-node" style="--todo-child-depth:' + depth + ';"><div class="todo-child-editing">' + renderTaskCard(todo, depth, false) + '</div></div>';
+        }
+        var actionId = /^\d+$/.test(String(todo.id)) ? String(todo.id) : "'" + escapeAttribute(todo.id) + "'";
+        var blocked = isBlocked(todo);
+        var deps = dependencyNames(todo);
+        var isArchived = todo.archived == 1;
+        var previous = previousSibling(todo);
+        var html = '<div class="todo-child-node" style="--todo-child-depth:' + depth + ';"><div class="todo-child-card' + (todo.completed == 1 ? ' completed' : '') + (blocked ? ' blocked' : '') + '" data-id="' + escapeAttribute(todo.id) + '" data-parent-id="' + parentIdOf(todo) + '" draggable="true">';
+        html += '<div class="todo-priority-bar ' + priorityCss(getEffectivePriority(todo)) + '"></div>';
+        html += '<div class="todo-checkbox' + (isArchived ? ' disabled' : '') + '"' + (isArchived ? '' : ' onclick="window._todo.toggle(' + actionId + ')"') + '></div>';
+        html += '<div class="todo-child-content"><div class="todo-child-title">' + escapeHtml(todo.title) + '</div><div class="todo-child-meta">';
+        html += '<span class="todo-priority-tag ' + priorityCss(getEffectivePriority(todo)) + '">' + priorityLabel(getEffectivePriority(todo)) + '</span>';
+        if (isNext && todo.completed != 1) html += '<span class="todo-next-badge">下一步</span>';
+        if (blocked) html += '<span class="todo-blocked-tag">等待：' + escapeHtml(deps.join('、')) + '</span>';
+        if (todo.due_date) html += '<span>' + formatDate(todo.due_date) + '</span>';
+        html += '</div></div><div class="todo-child-actions">';
+        if (!isArchived) {
+            if (parentIdOf(todo)) html += '<button class="todo-action-btn" onclick="window._todo.outdent(' + actionId + ')" title="提升层级">&#8676;</button>';
+            if (previous) html += '<button class="todo-action-btn" onclick="window._todo.indent(' + actionId + ')" title="降低层级">&#8677;</button>';
+            html += '<button class="todo-action-btn" onclick="window._todo.addChild(' + actionId + ')" title="新建子任务">&#8627;</button>';
+            html += '<button class="todo-action-btn" onclick="window._todo.startEdit(' + actionId + ')" title="编辑">&#9998;</button>';
+            if (todo.completed != 1) html += '<button class="todo-action-btn" onclick="window._todo.startPomodoro(' + actionId + ')" title="番茄钟">&#9654;</button>';
+            html += '<button class="todo-action-btn" onclick="window._todo.archive(' + actionId + ')" title="归档">&#128451;</button><button class="todo-action-btn" onclick="window._todo.deleteTodo(' + actionId + ')" title="删除">&#128465;</button>';
+        }
+        html += '</div>';
+        var children = childPreview(todo);
+        if (children.length) {
+            var nextChild = nextAvailableChild(todo);
+            var visibleChildren = children.slice(0, 3);
+            html += '<div class="todo-child-list todo-child-list-nested">' + visibleChildren.map(function (child) {
+                return renderChildCard(child, nextChild && sameId(nextChild.id, child.id), depth + 1);
+            }).join('');
+            if (children.length > visibleChildren.length) {
+                html += '<div class="todo-more-children">还有 ' + (children.length - visibleChildren.length) + ' 个子任务</div>';
             }
             html += '</div>';
-            if (!isEditing) {
-                html += '<div class="todo-actions">';
-                if (isArchived) {
-                    html += '<button class="todo-action-btn restore" onclick="window._todo.restore(' + todo.id + ')" title="恢复到列表">&#8635;</button>';
-                } else {
-                    if (todo.completed != 1) html += '<button class="todo-action-btn pomodoro" onclick="window._todo.startPomodoro(' + todo.id + ')" title="番茄钟">&#9654;</button>';
-                    html += '<button class="todo-action-btn" onclick="window._todo.startEdit(' + todo.id + ')" title="编辑">&#9998;</button>';
-                    html += '<button class="todo-action-btn archive" onclick="window._todo.archive(' + todo.id + ')" title="归档">&#128451;</button>';
-                }
-                html += '<button class="todo-action-btn delete" onclick="window._todo.deleteTodo(' + todo.id + ')" title="删除">&#128465;</button>';
-                html += '</div>';
+        }
+        return html + '</div>';
+    }
+
+    function renderMainCard(todo) {
+        var children = childPreview(todo);
+        var nextChild = nextAvailableChild(todo);
+        var visibleChildren = children.slice(0, 3);
+        var html = '<div class="todo-main-card">' + renderTaskCard(todo, 0, false);
+        if (visibleChildren.length) {
+            html += '<div class="todo-child-list">' + visibleChildren.map(function (child) {
+                return renderChildCard(child, nextChild && sameId(nextChild.id, child.id), 1);
+            }).join('');
+            if (children.length > visibleChildren.length) {
+                html += '<div class="todo-more-children">还有 ' + (children.length - visibleChildren.length) + ' 个子任务，完成当前步骤后继续展开</div>';
             }
-            html += '</div></div>';
-        });
-        listEl.innerHTML = html;
-        listEl.querySelectorAll('.todo-item').forEach(function (item) {
+            html += '</div>';
+        }
+        return html + '</div>';
+    }
+
+    function rootHasFilterMatch(root) {
+        if (currentFilter === 'all') return true;
+        if (currentFilter === 'active') return root.completed == 0 || descendantTasks(root.id, todos).some(function (task) { return task.completed == 0; });
+        if (currentFilter === 'completed') return root.completed == 1 || descendantTasks(root.id, todos).some(function (task) { return task.completed == 1; });
+        return true;
+    }
+
+    function attachTreeDragHandlers(listEl) {
+        listEl.querySelectorAll('.todo-item[draggable="true"], .todo-child-card[draggable="true"]').forEach(function (item) {
             item.addEventListener('dragstart', handleDragStart);
             item.addEventListener('dragover', handleDragOver);
             item.addEventListener('dragend', handleDragEnd);
         });
+    }
+
+    function renderList(filtered) {
+        var listEl = document.getElementById('todo-list');
+        listEl.classList.add('todo-tree-list');
+        if (currentFilter === 'archived') {
+            var archivedRows = treeRows(filtered, true);
+            if (archivedRows.length === 0) {
+                listEl.innerHTML = '<div class="todo-empty"><div class="todo-empty-icon">&#128203;</div>还没有已归档的事项</div>';
+                return;
+            }
+            listEl.innerHTML = archivedRows.map(function (row) { return renderTaskCard(row.todo, row.depth, false); }).join('');
+            attachTreeDragHandlers(listEl);
+            return;
+        }
+        var roots = todos.filter(function (todo) {
+            return todo.archived != 1 && !parentIdOf(todo) && rootHasFilterMatch(todo);
+        }).sort(function (a, b) {
+            return (parseInt(a.sort_order) || 0) - (parseInt(b.sort_order) || 0);
+        });
+        if (roots.length === 0) {
+            listEl.innerHTML = '<div class="todo-empty"><div class="todo-empty-icon">&#128203;</div>' + (currentFilter === 'all' ? '暂无待办事项，添加一个吧' : currentFilter === 'active' ? '所有任务都完成了！' : currentFilter === 'completed' ? '还没有已完成的待办' : '还没有已归档的事项') + '</div>';
+            return;
+        }
+        listEl.innerHTML = roots.map(renderMainCard).join('');
+        attachTreeDragHandlers(listEl);
+    }
+
+    function renderFocus() {
+        var listEl = document.getElementById('todo-list');
+        listEl.classList.add('todo-tree-list', 'todo-focus-list');
+        var leaves = todos.filter(function (todo) {
+            return todo.archived != 1 && todo.completed != 1 && !hasChildren(todo) && !isBlocked(todo);
+        }).sort(function (a, b) {
+            var priority = priorityLevel(getEffectivePriority(b)) - priorityLevel(getEffectivePriority(a));
+            if (priority) return priority;
+            var ad = a.due_date || '9999-12-31', bd = b.due_date || '9999-12-31';
+            return ad.localeCompare(bd) || (parseInt(b.importance) || 0) - (parseInt(a.importance) || 0);
+        });
+        if (!leaves.length) {
+            listEl.innerHTML = '<div class="todo-empty"><div class="todo-empty-icon">&#127919;</div>目前没有未完成的叶子任务</div>';
+            return;
+        }
+        listEl.innerHTML = '<div class="todo-focus-intro">专注视图只显示每棵任务树中可以直接执行的未完成事项，并按紧急程度排序。</div>' + leaves.map(function (todo) { return renderTaskCard(todo, 0, true); }).join('');
+    }
+
+    function dagLevel(todo, byId, memo, visiting) {
+        var key = String(todo.id);
+        if (memo[key] !== undefined) return memo[key];
+        if (visiting[key]) return 0;
+        visiting[key] = true;
+        var level = 0;
+        dependencyIdsOf(todo).forEach(function (dependencyId) {
+            var dependency = byId[dependencyId];
+            if (dependency) level = Math.max(level, dagLevel(dependency, byId, memo, visiting) + 1);
+        });
+        delete visiting[key];
+        memo[key] = level;
+        return level;
+    }
+
+    function dagStatus(todo) {
+        if (todo.completed == 1) return { label: '已完成', css: 'done' };
+        if (isBlocked(todo)) return { label: '等待前置', css: 'blocked' };
+        return { label: '可执行', css: 'ready' };
+    }
+
+    function dagDependents(todoId, source) {
+        var key = String(todoId);
+        return (source || todos).filter(function (todo) {
+            return dependencyIdsOf(todo).some(function (dependencyId) { return dependencyId === key; });
+        });
+    }
+
+    function dagReachable(todoId, direction, source) {
+        var byId = {}, seen = {}, queue = [String(todoId)];
+        (source || todos).forEach(function (todo) { byId[String(todo.id)] = todo; });
+        while (queue.length) {
+            var current = queue.shift();
+            var related = direction === 'up'
+                ? dependencyIdsOf(byId[current] || {})
+                : dagDependents(current, source).map(function (todo) { return String(todo.id); });
+            related.forEach(function (id) {
+                if (!seen[id] && id !== String(todoId)) { seen[id] = true; queue.push(id); }
+            });
+        }
+        return seen;
+    }
+
+    function attachDagInteractions(source) {
+        var wrap = document.getElementById('todo-dag-wrap');
+        if (!wrap) return;
+        var nodes = wrap.querySelectorAll('.todo-dag-node[data-dag-id]');
+        function clearHighlight() {
+            wrap.querySelectorAll('.todo-dag-node, .todo-dag-edge').forEach(function (item) {
+                item.classList.remove('highlighted', 'dimmed', 'upstream', 'downstream');
+            });
+        }
+        function highlight(todoId) {
+            var id = String(todoId), upstream = dagReachable(id, 'up', source), downstream = dagReachable(id, 'down', source);
+            wrap.querySelectorAll('.todo-dag-node[data-dag-id]').forEach(function (node) {
+                var nodeId = node.dataset.dagId;
+                if (nodeId === id) node.classList.add('highlighted');
+                else if (upstream[nodeId]) node.classList.add('upstream');
+                else if (downstream[nodeId]) node.classList.add('downstream');
+                else node.classList.add('dimmed');
+            });
+            wrap.querySelectorAll('.todo-dag-edge[data-dag-from]').forEach(function (edge) {
+                var from = edge.dataset.dagFrom, to = edge.dataset.dagTo;
+                if ((from === id && downstream[to]) || (to === id && upstream[from]) || (upstream[from] && downstream[to])) edge.classList.add('highlighted');
+                else edge.classList.add('dimmed');
+            });
+        }
+        nodes.forEach(function (node) {
+            node.addEventListener('mouseenter', function () { highlight(node.dataset.dagId); });
+            node.addEventListener('mouseleave', clearHighlight);
+            node.addEventListener('focus', function () { highlight(node.dataset.dagId); });
+            node.addEventListener('blur', clearHighlight);
+        });
+    }
+
+    function renderDag(filtered) {
+        var wrap = document.getElementById('todo-dag-wrap');
+        if (!wrap) return;
+        var source = currentFilter === 'archived' ? filtered : todos.filter(function (todo) { return todo.archived != 1; });
+        if (!source.length) {
+            wrap.innerHTML = '<div class="todo-empty"><div class="todo-empty-icon">&#128279;</div>暂无可展示的依赖关系</div>';
+            return;
+        }
+
+        var byId = {}, memo = {}, visiting = {}, maxLevel = 0;
+        source.forEach(function (todo) { byId[String(todo.id)] = todo; });
+        source.forEach(function (todo) { maxLevel = Math.max(maxLevel, dagLevel(todo, byId, memo, visiting)); });
+        var levels = [];
+        for (var i = 0; i <= maxLevel; i++) levels.push([]);
+        source.forEach(function (todo) { levels[memo[String(todo.id)] || 0].push(todo); });
+        levels.forEach(function (level) {
+            level.sort(function (a, b) {
+                return priorityLevel(getEffectivePriority(b)) - priorityLevel(getEffectivePriority(a)) || Number(a.id) - Number(b.id);
+            });
+        });
+
+        var html = '<div class="todo-dag-header"><div><strong>任务依赖图</strong><span>箭头方向：前置任务 → 当前任务 · 悬停查看上下游</span></div><div class="todo-dag-legend"><span><i class="todo-dag-dot ready"></i>可执行</span><span><i class="todo-dag-dot blocked"></i>等待前置</span><span><i class="todo-dag-dot done"></i>已完成</span></div></div>';
+        html += '<div class="todo-dag-board"><svg class="todo-dag-arrows" aria-hidden="true"></svg><div class="todo-dag-grid">';
+        levels.forEach(function (level, levelIndex) {
+            html += '<section class="todo-dag-level"><div class="todo-dag-level-label">' + (levelIndex === 0 ? '起点' : '第 ' + levelIndex + ' 层') + '</div>';
+            level.forEach(function (todo) {
+                var status = dagStatus(todo);
+                var actionId = /^\d+$/.test(String(todo.id)) ? String(todo.id) : "'" + escapeAttribute(todo.id) + "'";
+                var dependencies = dependenciesOf(todo);
+                var dependents = dagDependents(todo.id, source);
+                html += '<article class="todo-dag-node ' + status.css + '" data-dag-id="' + escapeAttribute(todo.id) + '" data-id="' + escapeAttribute(todo.id) + '" tabindex="0">';
+                html += '<div class="todo-dag-node-accent ' + priorityCss(getEffectivePriority(todo)) + '"></div><div class="todo-dag-node-body">';
+                html += '<div class="todo-dag-node-top"><span class="todo-dag-status ' + status.css + '">' + status.label + '</span><span class="todo-priority-tag ' + priorityCss(getEffectivePriority(todo)) + '">' + priorityLabel(getEffectivePriority(todo)) + '</span></div>';
+                html += '<div class="todo-dag-node-title">' + escapeHtml(todo.title) + '</div>';
+                if (dependencies.length) {
+                    html += '<div class="todo-dag-node-deps"><span>前置</span><span class="todo-dag-inline-arrow">→</span><span>' + dependencies.map(function (dependency) { return escapeHtml(dependency.title); }).join('、') + '</span></div>';
+                } else {
+                    html += '<div class="todo-dag-node-deps todo-dag-no-deps">无需等待前置任务</div>';
+                }
+                html += '<div class="todo-dag-node-relations"><span>前置 ' + dependencies.length + '</span><span>后续 ' + dependents.length + '</span></div>';
+                if (isBlocked(todo)) html += '<div class="todo-dag-waiting">等待：' + escapeHtml(dependencyNames(todo).join('、')) + '</div>';
+                html += '</div><button class="todo-dag-edit" type="button" onclick="window._todo.editFromDag(' + actionId + ')" title="编辑任务">&#9998;</button></article>';
+            });
+            html += '</section>';
+        });
+        html += '</div></div>';
+        wrap.innerHTML = html;
+        window.setTimeout(function () { drawDagArrows(); attachDagInteractions(source); }, 0);
+    }
+
+    function drawDagArrows() {
+        if (currentView !== 'dag') return;
+        var board = document.querySelector('.todo-dag-board');
+        var svg = board && board.querySelector('.todo-dag-arrows');
+        if (!board || !svg) return;
+        var boardRect = board.getBoundingClientRect();
+        var nodeMap = {};
+        board.querySelectorAll('.todo-dag-node[data-dag-id]').forEach(function (node) { nodeMap[node.dataset.dagId] = node; });
+        svg.setAttribute('width', board.scrollWidth);
+        svg.setAttribute('height', board.scrollHeight);
+        svg.setAttribute('viewBox', '0 0 ' + board.scrollWidth + ' ' + board.scrollHeight);
+        var markup = '<defs><marker id="todo-dag-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#8da2bd"></path></marker></defs>';
+        todos.forEach(function (todo) {
+            var target = nodeMap[String(todo.id)];
+            if (!target) return;
+            var targetRect = target.getBoundingClientRect();
+            dependencyIdsOf(todo).forEach(function (dependencyId) {
+                var source = nodeMap[String(dependencyId)];
+                if (!source) return;
+                var sourceRect = source.getBoundingClientRect();
+                var x1 = sourceRect.right - boardRect.left + board.scrollLeft;
+                var y1 = sourceRect.top + sourceRect.height / 2 - boardRect.top + board.scrollTop;
+                var x2 = targetRect.left - boardRect.left + board.scrollLeft;
+                var y2 = targetRect.top + targetRect.height / 2 - boardRect.top + board.scrollTop;
+                var bend = Math.max(28, (x2 - x1) * 0.42);
+                markup += '<path class="todo-dag-edge" data-dag-from="' + escapeAttribute(dependencyId) + '" data-dag-to="' + escapeAttribute(todo.id) + '" d="M ' + x1 + ' ' + y1 + ' C ' + (x1 + bend) + ' ' + y1 + ', ' + (x2 - bend) + ' ' + y2 + ', ' + x2 + ' ' + y2 + '" marker-end="url(#todo-dag-arrow)"></path>';
+            });
+        });
+        svg.innerHTML = markup;
     }
 
     /* ========== 2D Chart ========== */
@@ -768,7 +1280,7 @@
 
     function drawTooltip(pt, canvasW, canvasH, isDark) {
         var todo = pt.todo;
-        var effP = getEffectivePriority(todo);
+        var effP = hasChildren(todo) ? treePriority(todo) : getEffectivePriority(todo);
         var lines = [escapeHtmlPlain(todo.title)];
         lines.push('紧急度: ' + priorityLabel(effP));
         lines.push('重要度: ' + importanceStars(todo.importance));
@@ -1164,7 +1676,8 @@
     }
 
     /* ========== Helpers ========== */
-    function escapeHtml(str) { var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+    function escapeHtml(str) { var d = document.createElement('div'); d.textContent = str == null ? '' : String(str); return d.innerHTML; }
+    function escapeAttribute(str) { return escapeHtml(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
     function escapeHtmlPlain(str) { return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
     /* ========== Init ========== */
@@ -1186,7 +1699,7 @@
         var resizeTimer;
         window.addEventListener('resize', function () {
             clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(function () { if (currentView === 'chart') render(); }, 200);
+            resizeTimer = setTimeout(function () { if (currentView === 'chart' || currentView === 'dag') render(); }, 200);
         });
 
         var impSlider = document.getElementById('todo-importance');
@@ -1196,7 +1709,7 @@
         }
     }
 
-    window._todo = { toggle: toggleTodo, archive: archiveTodo, restore: restoreTodo, deleteTodo: deleteTodo, startEdit: startEdit, saveEdit: saveEdit, cancelEdit: cancelEdit, startPomodoro: startPomodoro, pauseSlot: pauseSlot, stopSlot: stopSlot };
+    window._todo = { toggle: toggleTodo, archive: archiveTodo, restore: restoreTodo, deleteTodo: deleteTodo, startEdit: startEdit, editFromDag: editFromDag, saveEdit: saveEdit, cancelEdit: cancelEdit, addChild: addChild, collapse: toggleCollapse, indent: indentTodo, outdent: outdentTodo, startPomodoro: startPomodoro, pauseSlot: pauseSlot, stopSlot: stopSlot };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
     else init();
 })();
