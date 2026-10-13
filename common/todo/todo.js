@@ -21,6 +21,8 @@
     let editingId = null;
     let dragItem = null;
     let dragSnapshot = null;
+    let dragReparented = false;
+    let dragDropTarget = null;
     let pendingParentId = '';
     let pendingDependencies = [];
     let collapsedIds = loadCollapsedIds();
@@ -647,9 +649,32 @@
     }
 
     /* ========== 拖拽 ========== */
-    function handleDragStart(e) { dragSnapshot = snapshotTodos(); dragItem = e.currentTarget; dragItem.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }
+    function clearDragDropState() {
+        document.body.classList.remove('todo-dragging');
+        document.querySelectorAll('.todo-parent-drop-zone.active, .todo-root-drop-zone.active').forEach(function (zone) { zone.classList.remove('active'); });
+        if (dragItem) dragItem.classList.remove('dragging');
+        dragDropTarget = null;
+    }
+    function canDropOnParent(todoId, parentId) {
+        if (!todoId || !parentId || String(todoId) === String(parentId)) return false;
+        return !descendantTasks(todoId, todos).some(function (task) { return String(task.id) === String(parentId); });
+    }
+    function findDraggedTodo() {
+        if (!dragItem) return null;
+        return todos.find(function (todo) { return String(todo.id) === String(dragItem.dataset.id); }) || null;
+    }
+    function handleDragStart(e) {
+        dragSnapshot = snapshotTodos();
+        dragReparented = false;
+        dragItem = e.currentTarget;
+        dragItem.classList.add('dragging');
+        document.body.classList.add('todo-dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', dragItem.dataset.id || '');
+    }
     function handleDragOver(e) {
         e.preventDefault();
+        if (e.target.closest('.todo-parent-drop-zone, .todo-root-drop-zone')) return;
         var target = e.target.closest('.todo-item, .todo-child-card');
         var isChildDrag = dragItem && dragItem.classList.contains('todo-child-card');
         var dragContainer = isChildDrag ? dragItem : dragItem.closest('.todo-main-card');
@@ -661,8 +686,51 @@
             else list.insertBefore(dragContainer, targetContainer);
         }
     }
+    function handleParentDragOver(e) {
+        var zone = e.currentTarget;
+        var dragged = findDraggedTodo();
+        var parentId = zone.dataset.parentDropId;
+        if (!dragged || !canDropOnParent(dragged.id, parentId)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        dragDropTarget = { zone: zone, parentId: parentId };
+        document.querySelectorAll('.todo-parent-drop-zone.active').forEach(function (item) { if (item !== zone) item.classList.remove('active'); });
+        zone.classList.add('active');
+        e.dataTransfer.dropEffect = 'move';
+    }
+    function handleRootDragOver(e) {
+        var dragged = findDraggedTodo();
+        if (!dragged || !parentIdOf(dragged)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        dragDropTarget = { zone: e.currentTarget, parentId: '' };
+        e.currentTarget.classList.add('active');
+        e.dataTransfer.dropEffect = 'move';
+    }
+    function handleParentDrop(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var dragged = findDraggedTodo();
+        var parentId = e.currentTarget.dataset.parentDropId;
+        if (!dragged || !canDropOnParent(dragged.id, parentId)) return;
+        dragReparented = true;
+        clearDragDropState();
+        updateParent(dragged, parentId);
+    }
+    function handleRootDrop(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var dragged = findDraggedTodo();
+        if (!dragged || !parentIdOf(dragged)) return;
+        dragReparented = true;
+        clearDragDropState();
+        updateParent(dragged, '');
+    }
     function handleDragEnd() {
-        if (dragItem) dragItem.classList.remove('dragging'); dragItem = null;
+        var wasReparented = dragReparented;
+        clearDragDropState();
+        dragItem = null;
+        if (wasReparented) { dragSnapshot = null; return; }
         var list = document.getElementById('todo-list');
         var orders = [];
         var counters = {};
@@ -851,6 +919,9 @@
             }
             html += '<button class="todo-action-btn delete" onclick="window._todo.deleteTodo(' + actionId + ')" title="删除">&#128465;</button></div>';
         }
+        if (!isEditing && !focusMode && !isArchived) {
+            html += '<div class="todo-parent-drop-zone" data-parent-drop-id="' + escapeAttribute(itemId) + '">放到这里，成为此任务的子任务</div>';
+        }
         return html + '</div></div>';
     }
 
@@ -896,6 +967,9 @@
             }
             html += '</div>';
         }
+        if (!isArchived) {
+            html += '<div class="todo-parent-drop-zone" data-parent-drop-id="' + escapeAttribute(todo.id) + '">放到这里，成为子任务</div>';
+        }
         return html + '</div>';
     }
 
@@ -929,6 +1003,15 @@
             item.addEventListener('dragover', handleDragOver);
             item.addEventListener('dragend', handleDragEnd);
         });
+        listEl.querySelectorAll('.todo-parent-drop-zone').forEach(function (zone) {
+            zone.addEventListener('dragover', handleParentDragOver);
+            zone.addEventListener('drop', handleParentDrop);
+        });
+        var rootZone = listEl.querySelector('.todo-root-drop-zone');
+        if (rootZone) {
+            rootZone.addEventListener('dragover', handleRootDragOver);
+            rootZone.addEventListener('drop', handleRootDrop);
+        }
     }
 
     function renderList(filtered) {
@@ -954,7 +1037,7 @@
             listEl.innerHTML = '<div class="todo-empty"><div class="todo-empty-icon">&#128203;</div>' + emptyText + '</div>';
             return;
         }
-        listEl.innerHTML = roots.map(renderMainCard).join('');
+        listEl.innerHTML = '<div class="todo-root-drop-zone">拖到这里，提升为顶层任务</div>' + roots.map(renderMainCard).join('');
         attachTreeDragHandlers(listEl);
     }
 
