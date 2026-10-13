@@ -127,6 +127,53 @@ function document_todo_maybe_add_hierarchy() {
 }
 add_action( 'init', 'document_todo_maybe_add_hierarchy' );
 
+/* 升级：修复旧数据中的失效父级和父级循环，保留正常的任务层级。 */
+function document_todo_normalize_hierarchy() {
+	if ( get_option( 'document_todo_hierarchy_normalized_v1' ) ) {
+		return;
+	}
+
+	global $wpdb;
+	$table = $wpdb->prefix . 'document_todos';
+	if ( $wpdb->get_var( "SHOW TABLES LIKE '$table'" ) !== $table ) {
+		return;
+	}
+
+	$rows = $wpdb->get_results( "SELECT id, parent_id FROM $table", ARRAY_A );
+	if ( ! is_array( $rows ) ) {
+		return;
+	}
+
+	$ids     = [];
+	$parents = [];
+	foreach ( $rows as $row ) {
+		$id            = (int) $row['id'];
+		$ids[ $id ]    = true;
+		$parents[ $id ] = (int) $row['parent_id'];
+	}
+
+	foreach ( array_keys( $parents ) as $id ) {
+		$cursor = $id;
+		$seen   = [];
+		for ( $step = 0; $step <= count( $parents ); $step++ ) {
+			$parent = $parents[ $cursor ] ?? 0;
+			if ( ! $parent ) {
+				break;
+			}
+			if ( ! isset( $ids[ $parent ] ) || $parent === $cursor || isset( $seen[ $parent ] ) ) {
+				$wpdb->query( $wpdb->prepare( "UPDATE $table SET parent_id = NULL WHERE id = %d", $cursor ) );
+				$parents[ $cursor ] = 0;
+				break;
+			}
+			$seen[ $cursor ] = true;
+			$cursor          = $parent;
+		}
+	}
+
+	update_option( 'document_todo_hierarchy_normalized_v1', 1, false );
+}
+add_action( 'init', 'document_todo_normalize_hierarchy', 21 );
+
 /** 已完成且截止日期过去至少七天的事项自动归档；手动恢复的事项除外。 */
 function document_todo_auto_archive() {
 	global $wpdb;
