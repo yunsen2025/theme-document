@@ -146,7 +146,7 @@
     padding: 10px;
     border: 1px solid #d8e0eb;
     border-radius: 10px;
-    background: rgba(255, 255, 255, 0.72);
+    background: #fff;
 }
 
 .todo-task-picker-toolbar {
@@ -1913,7 +1913,7 @@
 .todo-main-card {
     align-self: start;
     height: fit-content;
-    background: #f8fbff;
+    background: #fff;
     border-color: #d7e2ef;
 }
 
@@ -1928,7 +1928,7 @@
 .todo-main-card.has-children > .todo-item {
     min-height: 0;
     aspect-ratio: auto;
-    background: #f8fbff;
+    background: #fff;
     border-bottom: 1px solid #e0e8f2;
 }
 
