@@ -415,6 +415,45 @@
     border-color: var(--theme-color, #4a90d9);
 }
 
+.todo-search-control {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--theme-text-secondary, rgba(0, 0, 0, 0.65));
+    font-size: var(--theme-secondary, 0.78rem);
+}
+
+.todo-search-control input {
+    box-sizing: border-box;
+    width: min(260px, 42vw);
+    min-height: 34px;
+    padding: 6px 30px 6px 10px;
+    border: 1px solid var(--theme-border-color, #d8e0eb);
+    border-radius: 8px;
+    background: var(--theme-bg-color, #fff);
+    color: var(--theme-text-color, #333);
+}
+
+.todo-search-clear {
+    position: absolute;
+    right: 6px;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: #8190a3;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.todo-search-clear:hover,
+.todo-search-clear:focus-visible {
+    background: #edf2f7;
+    color: #526985;
+}
+
 /* 统计信息 */
 .todo-stats {
     font-size: var(--theme-secondary, 0.78rem);
@@ -1990,6 +2029,25 @@ body.todo-dragging .todo-root-drop-zone {
 
 .todo-add-advanced[open] > summary {
     margin-bottom: 10px;
+}
+
+.todo-settings-reset {
+    margin-top: 12px;
+    padding: 6px 10px;
+    border: 1px solid #d8e0eb;
+    border-radius: 7px;
+    background: #fff;
+    color: #718096;
+    font: inherit;
+    font-size: var(--theme-text-more-mini-2, 0.62rem);
+    cursor: pointer;
+}
+
+.todo-settings-reset:hover,
+.todo-settings-reset:focus-visible {
+    border-color: #9bb9d8;
+    background: #f7fbff;
+    color: #526985;
 }
 
 .todo-add-advanced .todo-add-settings {

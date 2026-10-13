@@ -82,6 +82,7 @@ get_header();
                                 <textarea id="todo-notes" class="todo-add-textarea" rows="2" placeholder="补充背景、下一步或想法（可选）"></textarea>
                             </label>
                         </div>
+                        <button id="todo-reset-settings" class="todo-settings-reset" type="button">重置设置</button>
                     </details>
                     <button id="todo-add-btn" class="todo-add-btn"><span aria-hidden="true">+</span> 添加</button>
                 </div>

@@ -468,6 +468,28 @@
         if (input) { input.focus(); input.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
     }
     function addChild(id) { setNewParent(id); }
+
+    function resetAdvancedSettings() {
+        pendingParentId = '';
+        pendingDependencies = [];
+        var priority = document.getElementById('todo-priority');
+        var date = document.getElementById('todo-date');
+        var importance = document.getElementById('todo-importance');
+        var importanceLabel = document.getElementById('todo-importance-label');
+        var notes = document.getElementById('todo-notes');
+        var parent = document.getElementById('todo-parent');
+        var dependencies = document.getElementById('todo-dependencies');
+        if (priority) priority.value = 'thisweek';
+        if (date) date.value = '';
+        if (importance) importance.value = '3';
+        if (importanceLabel) importanceLabel.textContent = importanceStars(3);
+        if (notes) notes.value = '';
+        if (parent) parent.value = '';
+        if (dependencies) Array.from(dependencies.options).forEach(function (option) { option.selected = false; });
+        populateParentSelect();
+        populateDependenciesSelect();
+    }
+
     function toggleCollapse(id) {
         var key = String(id);
         if (collapsedIds[key]) delete collapsedIds[key]; else collapsedIds[key] = true;
@@ -528,7 +550,7 @@
                 createBusy = false;
                 var idx = todos.findIndex(function (t) { return t.id === tempId; });
                 if (idx !== -1) todos[idx] = row;
-                pendingParentId = ''; pendingDependencies = [];
+                resetAdvancedSettings();
                 saveToLocal(); render(); syncFromServer(true).catch(function () { });
             })
             .catch(function (error) {
@@ -855,7 +877,7 @@
                     var css = priorityCss(effP);
                     html += '<div class="todo-sidebar-item">';
                     html += '<span class="todo-sidebar-dot ' + css + '"></span>';
-                    html += '<button class="todo-sidebar-play" onclick="window._todo.startPomodoro(' + todo.id + ')" title="番茄钟">&#9654;</button>';
+                    html += '<button class="todo-sidebar-play" onclick="window._todo.startPomodoro(' + todo.id + ')" aria-label="番茄钟" title="番茄钟">&#9654;</button>';
                     html += '<span class="todo-sidebar-text">' + escapeHtml(todo.title) + '</span>';
                     if (todo.due_date) {
                         var d = getDaysRemaining(todo.due_date);
@@ -904,7 +926,7 @@
             html += '<select id="edit-parent-' + itemId + '">' + parentOptions(itemId, parentIdOf(todo)) + '</select>';
             html += '<select id="edit-dependencies-' + itemId + '" class="todo-dependencies-select" multiple size="2">' + dependencyOptions(itemId, dependencyIdsOf(todo)) + '</select>';
             html += '</div><textarea class="todo-edit-notes" id="edit-notes-' + itemId + '" rows="2" placeholder="备注">' + escapeHtml(todo.notes || '') + '</textarea>';
-            html += '<div class="todo-edit-actions"><button class="todo-action-btn" onclick="window._todo.saveEdit(' + actionId + ')" title="保存">&#10003;</button><button class="todo-action-btn" onclick="window._todo.cancelEdit()" title="取消">&#10005;</button></div>';
+                html += '<div class="todo-edit-actions"><button class="todo-action-btn" onclick="window._todo.saveEdit(' + actionId + ')" aria-label="保存" title="保存">&#10003;</button><button class="todo-action-btn" onclick="window._todo.cancelEdit()" aria-label="取消" title="取消">&#10005;</button></div>';
         } else {
             if (focusMode) {
                 var path = breadcrumb(todo);
@@ -929,18 +951,18 @@
         html += '</div>';
         if (!isEditing) {
             html += '<div class="todo-actions">';
-            if (hasChildTasks) html += '<button class="todo-action-btn collapse" onclick="window._todo.collapse(' + actionId + ')" title="' + (collapsedIds[String(itemId)] ? '展开子任务' : '折叠子任务') + '">' + (collapsedIds[String(itemId)] ? '&#9656;' : '&#9662;') + '</button>';
+            if (hasChildTasks) html += '<button class="todo-action-btn collapse" onclick="window._todo.collapse(' + actionId + ')" aria-label="' + (collapsedIds[String(itemId)] ? '展开子任务' : '折叠子任务') + '" title="' + (collapsedIds[String(itemId)] ? '展开子任务' : '折叠子任务') + '">' + (collapsedIds[String(itemId)] ? '&#9656;' : '&#9662;') + '</button>';
             if (!isArchived) {
-                html += '<button class="todo-action-btn child" onclick="window._todo.addChild(' + actionId + ')" title="新建子任务">&#8627;</button>';
-                if (parentIdOf(todo)) html += '<button class="todo-action-btn" onclick="window._todo.outdent(' + actionId + ')" title="提升层级">&#8676;</button>';
-                if (previous) html += '<button class="todo-action-btn" onclick="window._todo.indent(' + actionId + ')" title="降低层级">&#8677;</button>';
+                html += '<button class="todo-action-btn child" onclick="window._todo.addChild(' + actionId + ')" aria-label="新建子任务" title="新建子任务">&#8627;</button>';
+                if (parentIdOf(todo)) html += '<button class="todo-action-btn" onclick="window._todo.outdent(' + actionId + ')" aria-label="提升层级" title="提升层级">&#8676;</button>';
+                if (previous) html += '<button class="todo-action-btn" onclick="window._todo.indent(' + actionId + ')" aria-label="降低层级" title="降低层级">&#8677;</button>';
             }
-            if (isArchived) html += '<button class="todo-action-btn restore" onclick="window._todo.restore(' + actionId + ')" title="恢复到列表">&#8635;</button>';
+            if (isArchived) html += '<button class="todo-action-btn restore" onclick="window._todo.restore(' + actionId + ')" aria-label="恢复到列表" title="恢复到列表">&#8635;</button>';
             else {
-                if (todo.completed != 1) html += '<button class="todo-action-btn pomodoro" onclick="window._todo.startPomodoro(' + actionId + ')" title="番茄钟">&#9654;</button>';
-                html += '<button class="todo-action-btn" onclick="window._todo.startEdit(' + actionId + ')" title="编辑">&#9998;</button><button class="todo-action-btn archive" onclick="window._todo.archive(' + actionId + ')" title="归档">&#128451;</button>';
+                if (todo.completed != 1) html += '<button class="todo-action-btn pomodoro" onclick="window._todo.startPomodoro(' + actionId + ')" aria-label="番茄钟" title="番茄钟">&#9654;</button>';
+                html += '<button class="todo-action-btn" onclick="window._todo.startEdit(' + actionId + ')" aria-label="编辑" title="编辑">&#9998;</button><button class="todo-action-btn archive" onclick="window._todo.archive(' + actionId + ')" aria-label="归档" title="归档">&#128451;</button>';
             }
-            html += '<button class="todo-action-btn delete" onclick="window._todo.deleteTodo(' + actionId + ')" title="删除">&#128465;</button></div>';
+            html += '<button class="todo-action-btn delete" onclick="window._todo.deleteTodo(' + actionId + ')" aria-label="删除" title="删除">&#128465;</button></div>';
         }
         if (!isEditing && !focusMode && !isArchived) {
             html += '<div class="todo-parent-drop-zone" data-parent-drop-id="' + escapeAttribute(itemId) + '">放到这里，成为此任务的子任务</div>';
@@ -970,12 +992,12 @@
         if (todo.due_date) html += '<span>' + formatDate(todo.due_date) + '</span>';
         html += '</div></div><div class="todo-child-actions">';
         if (!isArchived) {
-            if (parentIdOf(todo)) html += '<button class="todo-action-btn" onclick="window._todo.outdent(' + actionId + ')" title="提升层级">&#8676;</button>';
-            if (previous) html += '<button class="todo-action-btn" onclick="window._todo.indent(' + actionId + ')" title="降低层级">&#8677;</button>';
-            html += '<button class="todo-action-btn" onclick="window._todo.addChild(' + actionId + ')" title="新建子任务">&#8627;</button>';
-            html += '<button class="todo-action-btn" onclick="window._todo.startEdit(' + actionId + ')" title="编辑">&#9998;</button>';
-            if (todo.completed != 1) html += '<button class="todo-action-btn" onclick="window._todo.startPomodoro(' + actionId + ')" title="番茄钟">&#9654;</button>';
-            html += '<button class="todo-action-btn" onclick="window._todo.archive(' + actionId + ')" title="归档">&#128451;</button><button class="todo-action-btn" onclick="window._todo.deleteTodo(' + actionId + ')" title="删除">&#128465;</button>';
+            if (parentIdOf(todo)) html += '<button class="todo-action-btn" onclick="window._todo.outdent(' + actionId + ')" aria-label="提升层级" title="提升层级">&#8676;</button>';
+            if (previous) html += '<button class="todo-action-btn" onclick="window._todo.indent(' + actionId + ')" aria-label="降低层级" title="降低层级">&#8677;</button>';
+            html += '<button class="todo-action-btn" onclick="window._todo.addChild(' + actionId + ')" aria-label="新建子任务" title="新建子任务">&#8627;</button>';
+            html += '<button class="todo-action-btn" onclick="window._todo.startEdit(' + actionId + ')" aria-label="编辑" title="编辑">&#9998;</button>';
+            if (todo.completed != 1) html += '<button class="todo-action-btn" onclick="window._todo.startPomodoro(' + actionId + ')" aria-label="番茄钟" title="番茄钟">&#9654;</button>';
+            html += '<button class="todo-action-btn" onclick="window._todo.archive(' + actionId + ')" aria-label="归档" title="归档">&#128451;</button><button class="todo-action-btn" onclick="window._todo.deleteTodo(' + actionId + ')" aria-label="删除" title="删除">&#128465;</button>';
         }
         html += '</div>';
         var children = childPreview(todo);
@@ -1210,7 +1232,7 @@
                 }
                 html += '<div class="todo-dag-node-relations"><span>前置 ' + dependencies.length + '</span><span>后续 ' + dependents.length + '</span></div>';
                 if (isBlocked(todo)) html += '<div class="todo-dag-waiting">等待：' + escapeHtml(dependencyNames(todo).join('、')) + '</div>';
-                html += '</div><button class="todo-dag-edit" type="button" onclick="window._todo.editFromDag(' + actionId + ')" title="编辑任务">&#9998;</button></article>';
+                html += '</div><button class="todo-dag-edit" type="button" onclick="window._todo.editFromDag(' + actionId + ')" aria-label="编辑任务" title="编辑任务">&#9998;</button></article>';
             });
             html += '</section>';
         });
@@ -1911,8 +1933,8 @@
             html += '<span class="pomodoro-timer">' + timeStr + '</span>';
             html += '<span class="pomodoro-phase' + (pomodoroSlots.length > 1 ? ' hide-when-crowded' : '') + '">' + phaseText + '</span>';
             html += '<div class="pomodoro-actions">';
-            html += '<button class="pomodoro-btn" onclick="window._todo.pauseSlot(' + slot.todoId + ')" title="' + (slot.paused ? '继续' : '暂停') + '">' + (slot.paused ? '&#9654;' : '&#9208;') + '</button>';
-            html += '<button class="pomodoro-btn" onclick="window._todo.stopSlot(' + slot.todoId + ')" title="停止">&#9209;</button>';
+            html += '<button class="pomodoro-btn" onclick="window._todo.pauseSlot(' + slot.todoId + ')" aria-label="' + (slot.paused ? '继续' : '暂停') + '" title="' + (slot.paused ? '继续' : '暂停') + '">' + (slot.paused ? '&#9654;' : '&#9208;') + '</button>';
+            html += '<button class="pomodoro-btn" onclick="window._todo.stopSlot(' + slot.todoId + ')" aria-label="停止" title="停止">&#9209;</button>';
             html += '</div>';
             var countStr = '';
             for (var i = 0; i < slot.count; i++) countStr += '&#127813;';
@@ -1984,14 +2006,27 @@
         var label = document.createElement('label');
         label.className = 'todo-search-control';
         label.setAttribute('for', 'todo-search');
-        label.innerHTML = '<span>搜索</span><input id="todo-search" type="search" placeholder="搜索标题、备注或项目路径" autocomplete="off">';
+        label.innerHTML = '<span>搜索</span><input id="todo-search" type="search" placeholder="搜索标题、备注或项目路径" autocomplete="off"><button type="button" class="todo-search-clear" aria-label="清除搜索" title="清除搜索">×</button>';
         filters.parentNode.insertBefore(label, filters);
         var input = document.getElementById('todo-search');
+        var clear = label.querySelector('.todo-search-clear');
         input.value = searchQuery;
         input.addEventListener('input', function () {
             searchQuery = this.value.trim();
             savePreference(SEARCH_KEY, searchQuery);
             render();
+        });
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                input.value = '';
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        });
+        if (clear) clear.addEventListener('click', function (e) {
+            e.preventDefault();
+            input.value = '';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.focus();
         });
     }
 
@@ -2014,8 +2049,23 @@
         document.getElementById('todo-input').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); addTodo(); } });
         document.getElementById('todo-parent').addEventListener('change', function () { pendingParentId = this.value || ''; });
         document.getElementById('todo-dependencies').addEventListener('change', function () { pendingDependencies = Array.from(this.selectedOptions).map(function (option) { return option.value; }); });
+        document.getElementById('todo-reset-settings').addEventListener('click', resetAdvancedSettings);
         document.querySelectorAll('.todo-filter-btn').forEach(function (b) { b.addEventListener('click', function () { setFilter(this.dataset.filter); }); });
         document.querySelectorAll('.todo-view-btn').forEach(function (b) { b.addEventListener('click', function () { setView(this.dataset.view); }); });
+        document.addEventListener('keydown', function (e) {
+            if (e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
+            var target = e.target;
+            var isTextInput = target && (target.matches('input, textarea, select') || target.isContentEditable);
+            if (e.key === '/' && !isTextInput) {
+                e.preventDefault();
+                var search = document.getElementById('todo-search');
+                if (search) search.focus();
+            } else if (e.key.toLowerCase() === 'n' && !isTextInput) {
+                e.preventDefault();
+                var titleInput = document.getElementById('todo-input');
+                if (titleInput) titleInput.focus();
+            }
+        });
 
         initChartEvents();
         initPomodoroEvents();
