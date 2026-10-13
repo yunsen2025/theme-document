@@ -996,12 +996,22 @@
         return html + '</div>';
     }
 
+    function taskLayoutSpan(todo) {
+        var descendants = descendantTasks(todo.id, todos).length;
+        var notesLength = String(todo.notes || '').trim().length;
+        if (descendants === 0) return 1;
+        if (descendants >= 5 || notesLength >= 180) return 4;
+        if (descendants >= 3 || notesLength >= 80) return 3;
+        return 2;
+    }
+
     function renderMainCard(todo) {
         var children = childPreview(todo);
         var nextChild = nextAvailableChild(todo);
         var visibleChildren = children.slice(0, 3);
         var cardClass = visibleChildren.length ? ' has-children' : ' single-task';
-        var html = '<div class="todo-main-card' + cardClass + '">' + renderTaskCard(todo, 0, false);
+        var span = taskLayoutSpan(todo);
+        var html = '<div class="todo-main-card todo-span-' + span + cardClass + '" data-layout-span="' + span + '">' + renderTaskCard(todo, 0, false);
         if (visibleChildren.length) {
             html += '<div class="todo-child-list">' + visibleChildren.map(function (child) {
                 return renderChildCard(child, nextChild && sameId(nextChild.id, child.id), 1);

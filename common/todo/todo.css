@@ -449,7 +449,7 @@
 /* 列表 */
 .todo-list {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
     padding: 0;
     margin: 0;
@@ -460,7 +460,7 @@
 /* 树视图：普通任务保持紧凑矩形，有子任务的主卡片按内容自然增高。 */
 .todo-list.todo-tree-list {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
     align-items: start;
     width: 100%;
@@ -578,11 +578,24 @@ body.todo-dragging .todo-root-drop-zone {
 .todo-main-card {
     display: block;
     min-width: 0;
+    grid-column: span 1;
     overflow: hidden;
     border: 1px solid #dfe6f0;
     border-radius: 10px;
     background: var(--theme-bg-color, #fff);
     box-shadow: 0 3px 12px rgba(55, 76, 105, 0.045);
+}
+
+.todo-main-card.todo-span-2 {
+    grid-column: span 2;
+}
+
+.todo-main-card.todo-span-3 {
+    grid-column: span 3;
+}
+
+.todo-main-card.todo-span-4 {
+    grid-column: 1 / -1;
 }
 
 .todo-main-card > .todo-item {
@@ -1903,6 +1916,16 @@ body.todo-dragging .todo-root-drop-zone {
         grid-template-columns: 1fr;
     }
 
+    .todo-list.todo-tree-list {
+        grid-template-columns: 1fr;
+    }
+
+    .todo-main-card.todo-span-2,
+    .todo-main-card.todo-span-3,
+    .todo-main-card.todo-span-4 {
+        grid-column: 1;
+    }
+
     .todo-main-card.single-task > .todo-item {
         aspect-ratio: auto;
     }
@@ -2157,6 +2180,16 @@ body.todo-dragging .todo-root-drop-zone {
 }
 
 @media (max-width: 768px) {
+    .todo-list,
+    .todo-list.todo-tree-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .todo-main-card.todo-span-3,
+    .todo-main-card.todo-span-4 {
+        grid-column: 1 / -1;
+    }
+
     .todo-add {
         grid-template-columns: 1fr;
     }
@@ -2190,6 +2223,17 @@ body.todo-dragging .todo-root-drop-zone {
 }
 
 @media (max-width: 480px) {
+    .todo-list,
+    .todo-list.todo-tree-list {
+        grid-template-columns: 1fr;
+    }
+
+    .todo-main-card.todo-span-2,
+    .todo-main-card.todo-span-3,
+    .todo-main-card.todo-span-4 {
+        grid-column: 1;
+    }
+
     .todo-add-advanced > summary {
         flex-wrap: wrap;
     }
