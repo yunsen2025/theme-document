@@ -9,10 +9,39 @@
  * 权限校验
  */
 function document_todo_check_permission() {
-	if ( ! current_user_can( 'administrator' ) ) {
+	if ( ! current_user_can( 'manage_options' ) ) {
 		wp_send_json_error( '无权限', 403 );
 	}
-	check_ajax_referer( 'document_nonce', 'nonce' );
+	if ( ! check_ajax_referer( 'document_nonce', 'nonce', false ) ) {
+		wp_send_json_error( '请求已过期，请刷新页面后重试', 403 );
+	}
+}
+
+function document_todo_table_exists( $table ) {
+	global $wpdb;
+	return $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) ) === $table;
+}
+
+function document_todo_task( $id ) {
+	global $wpdb;
+	$table = $wpdb->prefix . 'document_todos';
+	$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $table WHERE id = %d", (int) $id ), ARRAY_A );
+	return $wpdb->last_error ? new WP_Error( 'database_error', '读取待办事项失败' ) : $row;
+}
+
+function document_todo_parse_due_date( $raw, &$valid ) {
+	$valid = true;
+	$value = sanitize_text_field( is_scalar( $raw ) ? $raw : '' );
+	if ( '' === $value ) {
+		return null;
+	}
+	$date = DateTime::createFromFormat( 'Y-m-d', $value );
+	$errors = DateTime::getLastErrors();
+	if ( false === $date || ( is_array( $errors ) && ( $errors['warning_count'] || $errors['error_count'] ) ) || $date->format( 'Y-m-d' ) !== $value ) {
+		$valid = false;
+		return null;
+	}
+	return $value;
 }
 
 function document_todo_allowed_priorities() {
@@ -35,13 +64,40 @@ function document_todo_valid_parent( $id, $parent_id ) {
 		if ( $cursor === (int) $id ) {
 			return false;
 		}
-		$cursor = (int) $wpdb->get_var( $wpdb->prepare(
+		$parent = $wpdb->get_var( $wpdb->prepare(
 			"SELECT parent_id FROM $table WHERE id = %d",
 			$cursor
 		) );
+		if ( '' === $parent || null === $parent ) {
+			if ( $wpdb->last_error ) {
+				return false;
+			}
+			$cursor = 0;
+		} else {
+			$cursor = (int) $parent;
+		}
 	}
 
-	return true;
+	return 0 === $cursor;
+}
+
+function document_todo_valid_parent_map( $id, $parent_id, $parents ) {
+	if ( ! $parent_id || (int) $id === (int) $parent_id ) {
+		return ! $parent_id;
+	}
+	$cursor = (int) $parent_id;
+	$seen   = [];
+	for ( $i = 0; $i <= count( $parents ); $i++ ) {
+		if ( $cursor === (int) $id || isset( $seen[ $cursor ] ) ) {
+			return false;
+		}
+		$seen[ $cursor ] = true;
+		$cursor = isset( $parents[ $cursor ] ) ? (int) $parents[ $cursor ] : 0;
+		if ( ! $cursor ) {
+			return true;
+		}
+	}
+	return false;
 }
 
 function document_todo_next_sort_order( $parent_id ) {
@@ -78,6 +134,35 @@ function document_todo_decode_dependencies( $raw ) {
 	return array_values( $ids );
 }
 
+function document_todo_parse_dependencies( $raw, &$valid ) {
+	$valid = true;
+	if ( is_array( $raw ) ) {
+		$decoded = $raw;
+	} else {
+		$text = stripslashes( (string) $raw );
+		$decoded = json_decode( $text, true );
+		if ( JSON_ERROR_NONE !== json_last_error() || ! is_array( $decoded ) ) {
+			$valid = false;
+			return [];
+		}
+	}
+
+	$ids = [];
+	foreach ( $decoded as $value ) {
+		if ( ! is_int( $value ) && ( ! is_string( $value ) || ! preg_match( '/^[1-9][0-9]*$/', $value ) ) ) {
+			$valid = false;
+			return [];
+		}
+		$id = absint( $value );
+		if ( ! $id ) {
+			$valid = false;
+			return [];
+		}
+		$ids[ $id ] = $id;
+	}
+	return array_values( $ids );
+}
+
 /** 返回依赖关系，并拒绝自依赖、悬空任务和环。 */
 function document_todo_valid_dependencies( $task_id, $dependency_ids ) {
 	global $wpdb;
@@ -86,15 +171,21 @@ function document_todo_valid_dependencies( $task_id, $dependency_ids ) {
 	$dependency_ids = array_values( array_unique( array_map( 'absint', $dependency_ids ) ) );
 
 	if ( in_array( (int) $task_id, $dependency_ids, true ) ) {
-		return false;
+		return new WP_Error( 'dependency_self', '任务不能依赖自己' );
 	}
 	foreach ( $dependency_ids as $dependency_id ) {
 		if ( ! $wpdb->get_var( $wpdb->prepare( "SELECT id FROM $table WHERE id = %d", $dependency_id ) ) ) {
-			return false;
+			if ( $wpdb->last_error ) {
+				return new WP_Error( 'database_error', '读取前置任务失败' );
+			}
+			return new WP_Error( 'dependency_missing', '前置任务不存在' );
 		}
 	}
 
 	$edges = $wpdb->get_results( "SELECT task_id, depends_on_id FROM $edge_table", ARRAY_A );
+	if ( null === $edges && $wpdb->last_error ) {
+		return new WP_Error( 'database_error', '读取依赖关系失败' );
+	}
 	$graph = [];
 	foreach ( $edges as $edge ) {
 		$graph[ (string) $edge['task_id'] ][] = (string) $edge['depends_on_id'];
@@ -105,7 +196,7 @@ function document_todo_valid_dependencies( $task_id, $dependency_ids ) {
 		while ( $stack ) {
 			$current = array_pop( $stack );
 			if ( (string) $task_id === $current ) {
-				return false;
+				return new WP_Error( 'dependency_cycle', '依赖关系会形成循环' );
 			}
 			if ( isset( $seen[ $current ] ) ) {
 				continue;
@@ -123,20 +214,28 @@ function document_todo_valid_dependencies( $task_id, $dependency_ids ) {
 function document_todo_save_dependencies( $task_id, $dependency_ids ) {
 	global $wpdb;
 	$edge_table = document_todo_dependencies_table();
-	$wpdb->delete( $edge_table, [ 'task_id' => (int) $task_id ], [ '%d' ] );
+	if ( false === $wpdb->delete( $edge_table, [ 'task_id' => (int) $task_id ], [ '%d' ] ) ) {
+		return false;
+	}
 	foreach ( $dependency_ids as $dependency_id ) {
-		$wpdb->insert(
+		if ( false === $wpdb->insert(
 			$edge_table,
 			[ 'task_id' => (int) $task_id, 'depends_on_id' => (int) $dependency_id ],
 			[ '%d', '%d' ]
-		);
+		) ) {
+			return false;
+		}
 	}
+	return true;
 }
 
 function document_todo_attach_dependencies( &$rows ) {
 	global $wpdb;
 	$edge_table = document_todo_dependencies_table();
 	$edges = $wpdb->get_results( "SELECT task_id, depends_on_id FROM $edge_table", ARRAY_A );
+	if ( null === $edges && $wpdb->last_error ) {
+		return false;
+	}
 	$dependencies = [];
 	foreach ( $edges as $edge ) {
 		$dependencies[ (string) $edge['task_id'] ][] = (int) $edge['depends_on_id'];
@@ -145,6 +244,7 @@ function document_todo_attach_dependencies( &$rows ) {
 		$row['dependencies'] = $dependencies[ (string) $row['id'] ] ?? [];
 	}
 	unset( $row );
+	return true;
 }
 
 /**
@@ -160,7 +260,12 @@ function document_todo_list() {
 		"SELECT * FROM $table ORDER BY sort_order ASC, created_at DESC",
 		ARRAY_A
 	);
-	document_todo_attach_dependencies( $rows );
+	if ( null === $rows && $wpdb->last_error ) {
+		wp_send_json_error( '读取待办事项失败', 500 );
+	}
+	if ( ! document_todo_attach_dependencies( $rows ) ) {
+		wp_send_json_error( '读取前置任务失败', 500 );
+	}
 
 	wp_send_json_success( $rows ?: [] );
 }
@@ -176,21 +281,34 @@ function document_todo_create() {
 
 	$title    = sanitize_text_field( $_POST['title'] ?? '' );
 	$priority = sanitize_text_field( $_POST['priority'] ?? 'medium' );
-	$due_date = sanitize_text_field( $_POST['due_date'] ?? '' );
+	$due_date = document_todo_parse_due_date( $_POST['due_date'] ?? '', $due_date_valid );
 	$importance = intval( $_POST['importance'] ?? 3 );
 	$notes    = sanitize_textarea_field( $_POST['notes'] ?? '' );
 	$parent_id = absint( $_POST['parent_id'] ?? 0 );
-	$dependencies = document_todo_decode_dependencies( $_POST['dependencies'] ?? [] );
+	$dependencies = document_todo_parse_dependencies( $_POST['dependencies'] ?? [], $dependencies_valid );
 
 	if ( empty( $title ) ) {
 		wp_send_json_error( '标题不能为空' );
 	}
+	if ( ! $due_date_valid ) {
+		wp_send_json_error( '截止日期格式无效' );
+	}
+	if ( ! $dependencies_valid ) {
+		wp_send_json_error( '前置任务格式无效' );
+	}
 
 	if ( ! in_array( $priority, document_todo_allowed_priorities(), true ) ) {
-		$priority = 'thisweek';
+		wp_send_json_error( '优先级无效' );
 	}
-	if ( $parent_id && ! $wpdb->get_var( $wpdb->prepare( "SELECT id FROM $table WHERE id = %d", $parent_id ) ) ) {
-		$parent_id = 0;
+	$parent = $parent_id ? document_todo_task( $parent_id ) : null;
+	if ( is_wp_error( $parent ) ) {
+		wp_send_json_error( $parent->get_error_message(), 500 );
+	}
+	if ( $parent_id && ! $parent ) {
+		wp_send_json_error( '父任务不存在' );
+	}
+	if ( $parent_id && ! document_todo_valid_parent( 0, $parent_id ) ) {
+		wp_send_json_error( '父任务关系无效' );
 	}
 
 	$importance = max( 1, min( 5, $importance ) );
@@ -206,21 +324,39 @@ function document_todo_create() {
 	];
 	$format = [ '%s', '%s', '%d', '%s', '%d', '%s', '%d' ];
 
-	$wpdb->insert( $table, $data, $format );
+	if ( false === $wpdb->query( 'START TRANSACTION' ) ) {
+		wp_send_json_error( '无法开始数据库事务', 500 );
+	}
+	if ( false === $wpdb->insert( $table, $data, $format ) ) {
+		$wpdb->query( 'ROLLBACK' );
+		wp_send_json_error( '创建待办事项失败', 500 );
+	}
 	$id = $wpdb->insert_id;
 	$valid_dependencies = document_todo_valid_dependencies( $id, $dependencies );
-	if ( false === $valid_dependencies ) {
-		$wpdb->delete( $table, [ 'id' => $id ], [ '%d' ] );
-		wp_send_json_error( '依赖关系会形成循环或包含不存在的任务' );
+	if ( is_wp_error( $valid_dependencies ) ) {
+		$wpdb->query( 'ROLLBACK' );
+		wp_send_json_error( $valid_dependencies->get_error_message() );
 	}
-	document_todo_save_dependencies( $id, $valid_dependencies );
+	if ( ! document_todo_save_dependencies( $id, $valid_dependencies ) ) {
+		$wpdb->query( 'ROLLBACK' );
+		wp_send_json_error( '保存前置任务失败', 500 );
+	}
+	if ( false === $wpdb->query( 'COMMIT' ) ) {
+		$wpdb->query( 'ROLLBACK' );
+		wp_send_json_error( '提交待办事项失败', 500 );
+	}
 
 	$row = $wpdb->get_row(
 		$wpdb->prepare( "SELECT * FROM $table WHERE id = %d", $id ),
 		ARRAY_A
 	);
+	if ( ! $row ) {
+		wp_send_json_error( '创建成功但读取结果失败', 500 );
+	}
 	$rows = [ $row ];
-	document_todo_attach_dependencies( $rows );
+	if ( ! document_todo_attach_dependencies( $rows ) ) {
+		wp_send_json_error( '读取前置任务失败', 500 );
+	}
 	$row = $rows[0];
 
 	wp_send_json_success( $row );
@@ -239,6 +375,13 @@ function document_todo_update() {
 	if ( ! $id ) {
 		wp_send_json_error( 'ID无效' );
 	}
+	$task = document_todo_task( $id );
+	if ( is_wp_error( $task ) ) {
+		wp_send_json_error( $task->get_error_message(), 500 );
+	}
+	if ( ! $task ) {
+		wp_send_json_error( '待办事项不存在', 404 );
+	}
 
 	$update = [];
 	$format = [];
@@ -247,6 +390,9 @@ function document_todo_update() {
 
 	if ( isset( $_POST['title'] ) ) {
 		$update['title'] = sanitize_text_field( $_POST['title'] );
+		if ( '' === $update['title'] ) {
+			wp_send_json_error( '标题不能为空' );
+		}
 		$format[]        = '%s';
 	}
 	if ( isset( $_POST['notes'] ) ) {
@@ -265,18 +411,25 @@ function document_todo_update() {
 		if ( $archived ) {
 			$update['archived_at'] = current_time( 'mysql' );
 			$format[] = '%s';
+		} else {
+			$update['archived_at'] = null;
+			$format[] = '%s';
 		}
 	}
 	if ( isset( $_POST['priority'] ) ) {
 		$p = sanitize_text_field( $_POST['priority'] );
-		if ( in_array( $p, document_todo_allowed_priorities(), true ) ) {
-			$update['priority'] = $p;
-			$format[]           = '%s';
+		if ( ! in_array( $p, document_todo_allowed_priorities(), true ) ) {
+			wp_send_json_error( '优先级无效' );
 		}
+		$update['priority'] = $p;
+		$format[]           = '%s';
 	}
 	if ( isset( $_POST['parent_id'] ) ) {
 		$parent_id = absint( $_POST['parent_id'] );
 		if ( $parent_id && ! $wpdb->get_var( $wpdb->prepare( "SELECT id FROM $table WHERE id = %d", $parent_id ) ) ) {
+			if ( $wpdb->last_error ) {
+				wp_send_json_error( '读取父任务失败', 500 );
+			}
 			wp_send_json_error( '父任务不存在' );
 		}
 		if ( ! document_todo_valid_parent( $id, $parent_id ) ) {
@@ -286,7 +439,10 @@ function document_todo_update() {
 		$format[]            = '%d';
 	}
 	if ( isset( $_POST['due_date'] ) ) {
-		$update['due_date'] = sanitize_text_field( $_POST['due_date'] ) ?: null;
+		$update['due_date'] = document_todo_parse_due_date( $_POST['due_date'], $due_date_valid );
+		if ( ! $due_date_valid ) {
+			wp_send_json_error( '截止日期格式无效' );
+		}
 		$format[]           = '%s';
 	}
 	if ( isset( $_POST['importance'] ) ) {
@@ -298,25 +454,47 @@ function document_todo_update() {
 		wp_send_json_error( '没有要更新的字段' );
 	}
 	if ( $dependencies_changed ) {
-		$valid_dependencies = document_todo_valid_dependencies( $id, $dependencies );
-		if ( false === $valid_dependencies ) {
-			wp_send_json_error( '依赖关系会形成循环或包含不存在的任务' );
+		$valid_dependencies = document_todo_parse_dependencies( $_POST['dependencies'], $dependencies_valid );
+		if ( ! $dependencies_valid ) {
+			wp_send_json_error( '前置任务格式无效' );
+		}
+		$valid_dependencies = document_todo_valid_dependencies( $id, $valid_dependencies );
+		if ( is_wp_error( $valid_dependencies ) ) {
+			wp_send_json_error( $valid_dependencies->get_error_message() );
 		}
 	}
 
+	if ( false === $wpdb->query( 'START TRANSACTION' ) ) {
+		wp_send_json_error( '无法开始数据库事务', 500 );
+	}
 	if ( $update ) {
-		$wpdb->update( $table, $update, [ 'id' => $id ], $format, [ '%d' ] );
+		if ( false === $wpdb->update( $table, $update, [ 'id' => $id ], $format, [ '%d' ] ) ) {
+			$wpdb->query( 'ROLLBACK' );
+			wp_send_json_error( '更新待办事项失败', 500 );
+		}
 	}
 	if ( $dependencies_changed ) {
-		document_todo_save_dependencies( $id, $valid_dependencies );
+		if ( ! document_todo_save_dependencies( $id, $valid_dependencies ) ) {
+			$wpdb->query( 'ROLLBACK' );
+			wp_send_json_error( '保存前置任务失败', 500 );
+		}
+	}
+	if ( false === $wpdb->query( 'COMMIT' ) ) {
+		$wpdb->query( 'ROLLBACK' );
+		wp_send_json_error( '提交待办事项失败', 500 );
 	}
 
 	$row = $wpdb->get_row(
 		$wpdb->prepare( "SELECT * FROM $table WHERE id = %d", $id ),
 		ARRAY_A
 	);
+	if ( ! $row ) {
+		wp_send_json_error( '更新成功但读取结果失败', 500 );
+	}
 	$rows = [ $row ];
-	document_todo_attach_dependencies( $rows );
+	if ( ! document_todo_attach_dependencies( $rows ) ) {
+		wp_send_json_error( '读取前置任务失败', 500 );
+	}
 	$row = $rows[0];
 
 	wp_send_json_success( $row );
@@ -335,16 +513,45 @@ function document_todo_delete() {
 	if ( ! $id ) {
 		wp_send_json_error( 'ID无效' );
 	}
+	$task = document_todo_task( $id );
+	if ( is_wp_error( $task ) ) {
+		wp_send_json_error( $task->get_error_message(), 500 );
+	}
+	if ( ! $task ) {
+		wp_send_json_error( '待办事项不存在', 404 );
+	}
 
 	$parent_id = $wpdb->get_var( $wpdb->prepare( "SELECT parent_id FROM $table WHERE id = %d", $id ) );
+	if ( null === $parent_id && $wpdb->last_error ) {
+		wp_send_json_error( '读取待办事项失败', 500 );
+	}
+	if ( false === $wpdb->query( 'START TRANSACTION' ) ) {
+		wp_send_json_error( '无法开始数据库事务', 500 );
+	}
 	if ( $parent_id ) {
-		$wpdb->query( $wpdb->prepare( "UPDATE $table SET parent_id = %d WHERE parent_id = %d", $parent_id, $id ) );
+		if ( false === $wpdb->query( $wpdb->prepare( "UPDATE $table SET parent_id = %d WHERE parent_id = %d", $parent_id, $id ) ) ) {
+			$wpdb->query( 'ROLLBACK' );
+			wp_send_json_error( '转移子任务失败', 500 );
+		}
 	} else {
-		$wpdb->query( $wpdb->prepare( "UPDATE $table SET parent_id = NULL WHERE parent_id = %d", $id ) );
+		if ( false === $wpdb->query( $wpdb->prepare( "UPDATE $table SET parent_id = NULL WHERE parent_id = %d", $id ) ) ) {
+			$wpdb->query( 'ROLLBACK' );
+			wp_send_json_error( '解除子任务关系失败', 500 );
+		}
 	}
 	$edge_table = document_todo_dependencies_table();
-	$wpdb->query( $wpdb->prepare( "DELETE FROM $edge_table WHERE task_id = %d OR depends_on_id = %d", $id, $id ) );
-	$wpdb->delete( $table, [ 'id' => $id ], [ '%d' ] );
+	if ( false === $wpdb->query( $wpdb->prepare( "DELETE FROM $edge_table WHERE task_id = %d OR depends_on_id = %d", $id, $id ) ) ) {
+		$wpdb->query( 'ROLLBACK' );
+		wp_send_json_error( '删除前置任务关系失败', 500 );
+	}
+	if ( false === $wpdb->delete( $table, [ 'id' => $id ], [ '%d' ] ) ) {
+		$wpdb->query( 'ROLLBACK' );
+		wp_send_json_error( '删除待办事项失败', 500 );
+	}
+	if ( false === $wpdb->query( 'COMMIT' ) ) {
+		$wpdb->query( 'ROLLBACK' );
+		wp_send_json_error( '提交待办事项失败', 500 );
+	}
 	wp_send_json_success( [ 'deleted' => $id ] );
 }
 add_action( 'wp_ajax_todo_delete', 'document_todo_delete' );
@@ -362,28 +569,71 @@ function document_todo_reorder() {
 		wp_send_json_error( '数据格式错误' );
 	}
 
+	$seen_ids = [];
+	$parents = $wpdb->get_results( "SELECT id, parent_id FROM $table", ARRAY_A );
+	if ( null === $parents && $wpdb->last_error ) {
+		wp_send_json_error( '读取任务层级失败', 500 );
+	}
+	$parent_map = [];
+	foreach ( $parents ?: [] as $parent_row ) {
+		$parent_map[ (int) $parent_row['id'] ] = (int) $parent_row['parent_id'];
+	}
+	$pending_parents = $parent_map;
 	foreach ( $orders as $item ) {
-		$id = absint( $item['id'] ?? 0 );
-		$has_parent = array_key_exists( 'parent_id', $item );
-		$parent_id = $has_parent ? absint( $item['parent_id'] ) : 0;
-		if ( ! $id || ( $has_parent && $parent_id && ! $wpdb->get_var( $wpdb->prepare( "SELECT id FROM $table WHERE id = %d", $parent_id ) ) ) || ( $has_parent && ! document_todo_valid_parent( $id, $parent_id ) ) ) {
+		if ( is_array( $item ) && array_key_exists( 'parent_id', $item ) ) {
+			$pending_parents[ absint( $item['id'] ?? 0 ) ] = absint( $item['parent_id'] );
+		}
+	}
+	foreach ( $orders as $item ) {
+		if ( ! is_array( $item ) || ! array_key_exists( 'parent_id', $item ) ) {
 			continue;
 		}
+		$check_id = absint( $item['id'] ?? 0 );
+		$check_parent = absint( $item['parent_id'] );
+		if ( ! $check_id || ( $check_parent && ! isset( $parent_map[ $check_parent ] ) ) || ! document_todo_valid_parent_map( $check_id, $check_parent, $pending_parents ) ) {
+			wp_send_json_error( '父任务关系无效' );
+		}
+	}
+	if ( false === $wpdb->query( 'START TRANSACTION' ) ) {
+		wp_send_json_error( '无法开始数据库事务', 500 );
+	}
+	foreach ( $orders as $item ) {
+		if ( ! is_array( $item ) ) {
+			$wpdb->query( 'ROLLBACK' );
+			wp_send_json_error( '排序数据格式错误' );
+		}
+		$id = absint( $item['id'] ?? 0 );
+		$task = null;
+		$has_parent = array_key_exists( 'parent_id', $item );
+		$parent_id = $has_parent ? absint( $item['parent_id'] ) : 0;
+		$task = $id ? document_todo_task( $id ) : null;
+		if ( ! $id || isset( $seen_ids[ $id ] ) || is_wp_error( $task ) || ! $task ) {
+			$wpdb->query( 'ROLLBACK' );
+			wp_send_json_error( is_wp_error( $task ) ? $task->get_error_message() : '排序任务无效', is_wp_error( $task ) ? 500 : 400 );
+		}
+		$seen_ids[ $id ] = true;
 		$update = [ 'sort_order' => intval( $item['sort_order'] ) ];
 		$format = [ '%d' ];
 		if ( $has_parent ) {
 			$update['parent_id'] = $parent_id ?: null;
 			$format[] = '%d';
 		}
-		$wpdb->update(
+		if ( false === $wpdb->update(
 			$table,
 			$update,
 			[ 'id' => $id ],
 			$format,
 			[ '%d' ]
-		);
+		) ) {
+			$wpdb->query( 'ROLLBACK' );
+			wp_send_json_error( '保存排序失败', 500 );
+		}
 	}
 
+	if ( false === $wpdb->query( 'COMMIT' ) ) {
+		$wpdb->query( 'ROLLBACK' );
+		wp_send_json_error( '提交排序失败', 500 );
+	}
 	wp_send_json_success( true );
 }
 add_action( 'wp_ajax_todo_reorder', 'document_todo_reorder' );

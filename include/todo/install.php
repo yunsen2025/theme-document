@@ -37,6 +37,11 @@ function document_todo_create_table() {
 	dbDelta( $sql );
 }
 
+function document_todo_install_table_exists( $table_name ) {
+	global $wpdb;
+	return $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table_name ) ) === $table_name;
+}
+
 /* 主题激活时创建表 */
 add_action( 'after_switch_theme', 'document_todo_create_table' );
 
@@ -64,7 +69,7 @@ add_action( 'after_switch_theme', 'document_todo_create_dependencies_table' );
 function document_todo_maybe_create_table() {
 	global $wpdb;
 	$table_name = $wpdb->prefix . 'document_todos';
-	if ( $wpdb->get_var( "SHOW TABLES LIKE '$table_name'" ) !== $table_name ) {
+	if ( ! document_todo_install_table_exists( $table_name ) ) {
 		document_todo_create_table();
 	}
 }
@@ -73,7 +78,7 @@ add_action( 'init', 'document_todo_maybe_create_table' );
 function document_todo_maybe_create_dependencies_table() {
 	global $wpdb;
 	$table_name = $wpdb->prefix . 'document_todo_edges';
-	if ( $wpdb->get_var( "SHOW TABLES LIKE '$table_name'" ) !== $table_name ) {
+	if ( ! document_todo_install_table_exists( $table_name ) ) {
 		document_todo_create_dependencies_table();
 	}
 }
@@ -83,9 +88,14 @@ add_action( 'init', 'document_todo_maybe_create_dependencies_table', 20 );
 function document_todo_maybe_add_importance() {
 	global $wpdb;
 	$table_name = $wpdb->prefix . 'document_todos';
+	if ( ! document_todo_install_table_exists( $table_name ) ) {
+		return;
+	}
 	$column = $wpdb->get_results( "SHOW COLUMNS FROM $table_name LIKE 'importance'" );
 	if ( empty( $column ) ) {
-		$wpdb->query( "ALTER TABLE $table_name ADD COLUMN importance tinyint(1) NOT NULL DEFAULT 3 AFTER priority" );
+		if ( false === $wpdb->query( "ALTER TABLE $table_name ADD COLUMN importance tinyint(1) NOT NULL DEFAULT 3 AFTER priority" ) ) {
+			return;
+		}
 		$wpdb->query( "ALTER TABLE $table_name ADD KEY idx_importance (importance)" );
 	}
 }
@@ -95,11 +105,18 @@ add_action( 'init', 'document_todo_maybe_add_importance' );
 function document_todo_maybe_add_archive() {
 	global $wpdb;
 	$table_name = $wpdb->prefix . 'document_todos';
+	if ( ! document_todo_install_table_exists( $table_name ) ) {
+		return;
+	}
 	$column     = $wpdb->get_results( "SHOW COLUMNS FROM $table_name LIKE 'archived'" );
 
 	if ( empty( $column ) ) {
-		$wpdb->query( "ALTER TABLE $table_name ADD COLUMN archived tinyint(1) NOT NULL DEFAULT 0 AFTER completed" );
-		$wpdb->query( "ALTER TABLE $table_name ADD COLUMN archived_at datetime DEFAULT NULL AFTER archived" );
+		if ( false === $wpdb->query( "ALTER TABLE $table_name ADD COLUMN archived tinyint(1) NOT NULL DEFAULT 0 AFTER completed" ) ) {
+			return;
+		}
+		if ( false === $wpdb->query( "ALTER TABLE $table_name ADD COLUMN archived_at datetime DEFAULT NULL AFTER archived" ) ) {
+			return;
+		}
 		$wpdb->query( "ALTER TABLE $table_name ADD KEY idx_archived (archived)" );
 	}
 }
@@ -109,15 +126,22 @@ add_action( 'init', 'document_todo_maybe_add_archive' );
 function document_todo_maybe_add_hierarchy() {
 	global $wpdb;
 	$table_name = $wpdb->prefix . 'document_todos';
+	if ( ! document_todo_install_table_exists( $table_name ) ) {
+		return;
+	}
 
 	$notes_column = $wpdb->get_results( "SHOW COLUMNS FROM $table_name LIKE 'notes'" );
 	if ( empty( $notes_column ) ) {
-		$wpdb->query( "ALTER TABLE $table_name ADD COLUMN notes text DEFAULT NULL AFTER title" );
+		if ( false === $wpdb->query( "ALTER TABLE $table_name ADD COLUMN notes text DEFAULT NULL AFTER title" ) ) {
+			return;
+		}
 	}
 
 	$parent_column = $wpdb->get_results( "SHOW COLUMNS FROM $table_name LIKE 'parent_id'" );
 	if ( empty( $parent_column ) ) {
-		$wpdb->query( "ALTER TABLE $table_name ADD COLUMN parent_id bigint(20) unsigned DEFAULT NULL AFTER notes" );
+		if ( false === $wpdb->query( "ALTER TABLE $table_name ADD COLUMN parent_id bigint(20) unsigned DEFAULT NULL AFTER notes" ) ) {
+			return;
+		}
 	}
 
 	$parent_index = $wpdb->get_results( "SHOW INDEX FROM $table_name WHERE Key_name = 'idx_parent_id'" );
@@ -135,12 +159,12 @@ function document_todo_normalize_hierarchy() {
 
 	global $wpdb;
 	$table = $wpdb->prefix . 'document_todos';
-	if ( $wpdb->get_var( "SHOW TABLES LIKE '$table'" ) !== $table ) {
+	if ( ! document_todo_install_table_exists( $table ) ) {
 		return;
 	}
 
 	$rows = $wpdb->get_results( "SELECT id, parent_id FROM $table", ARRAY_A );
-	if ( ! is_array( $rows ) ) {
+	if ( null === $rows && $wpdb->last_error ) {
 		return;
 	}
 
@@ -161,7 +185,9 @@ function document_todo_normalize_hierarchy() {
 				break;
 			}
 			if ( ! isset( $ids[ $parent ] ) || $parent === $cursor || isset( $seen[ $parent ] ) ) {
-				$wpdb->query( $wpdb->prepare( "UPDATE $table SET parent_id = NULL WHERE id = %d", $cursor ) );
+				if ( false === $wpdb->query( $wpdb->prepare( "UPDATE $table SET parent_id = NULL WHERE id = %d", $cursor ) ) ) {
+					return;
+				}
 				$parents[ $cursor ] = 0;
 				break;
 			}
@@ -174,10 +200,72 @@ function document_todo_normalize_hierarchy() {
 }
 add_action( 'init', 'document_todo_normalize_hierarchy', 21 );
 
+/* 升级：清理旧版本可能留下的悬空、自依赖和循环依赖边。 */
+function document_todo_normalize_dependencies() {
+	if ( get_option( 'document_todo_dependencies_normalized_v1' ) ) {
+		return;
+	}
+
+	global $wpdb;
+	$task_table = $wpdb->prefix . 'document_todos';
+	$edge_table = $wpdb->prefix . 'document_todo_edges';
+	if ( ! document_todo_install_table_exists( $task_table ) || ! document_todo_install_table_exists( $edge_table ) ) {
+		return;
+	}
+
+	$task_ids = $wpdb->get_col( "SELECT id FROM $task_table" );
+	$edges    = $wpdb->get_results( "SELECT task_id, depends_on_id FROM $edge_table ORDER BY created_at ASC, task_id ASC, depends_on_id ASC", ARRAY_A );
+	if ( ( null === $task_ids || null === $edges ) && $wpdb->last_error ) {
+		return;
+	}
+	$task_ids = array_fill_keys( array_map( 'strval', $task_ids ?: [] ), true );
+	$graph    = [];
+
+	foreach ( $edges ?: [] as $edge ) {
+		$task_id = (string) absint( $edge['task_id'] );
+		$dep_id  = (string) absint( $edge['depends_on_id'] );
+		$invalid = ! isset( $task_ids[ $task_id ] ) || ! isset( $task_ids[ $dep_id ] ) || $task_id === $dep_id;
+		$cycle  = false;
+		if ( ! $invalid ) {
+			// The candidate edge is task_id -> dep_id. It is cyclic only if
+			// dep_id already reaches task_id through accepted edges.
+			$stack = [ $dep_id ];
+			$seen  = [];
+			while ( $stack ) {
+				$current = array_pop( $stack );
+				if ( $current === $task_id ) {
+					$cycle = true;
+					break;
+				}
+				if ( isset( $seen[ $current ] ) ) {
+					continue;
+				}
+				$seen[ $current ] = true;
+				foreach ( $graph[ $current ] ?? [] as $next ) {
+					$stack[] = $next;
+				}
+			}
+		}
+		if ( $invalid || $cycle ) {
+			if ( false === $wpdb->delete( $edge_table, [ 'task_id' => (int) $task_id, 'depends_on_id' => (int) $dep_id ], [ '%d', '%d' ] ) ) {
+				return;
+			}
+			continue;
+		}
+		$graph[ $task_id ][] = $dep_id;
+	}
+
+	update_option( 'document_todo_dependencies_normalized_v1', 1, false );
+}
+add_action( 'init', 'document_todo_normalize_dependencies', 22 );
+
 /** 已完成且截止日期过去至少七天的事项自动归档；手动恢复的事项除外。 */
 function document_todo_auto_archive() {
 	global $wpdb;
 	$table = $wpdb->prefix . 'document_todos';
+	if ( ! document_todo_install_table_exists( $table ) ) {
+		return 0;
+	}
 	$cutoff = current_datetime()->modify( '-7 days' )->format( 'Y-m-d' );
 	return $wpdb->query( $wpdb->prepare(
 		"UPDATE $table SET archived = 1, archived_at = %s

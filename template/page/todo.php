@@ -32,45 +32,48 @@ get_header();
                 <!-- 添加区域 -->
                 <div class="todo-add">
                     <label class="todo-add-field todo-add-field-title" for="todo-input">
-                        <span>待办事项</span>
+                        <span class="todo-add-label">快速添加任务</span>
                         <input type="text" id="todo-input" class="todo-add-input" placeholder="想完成什么？" autocomplete="off">
                     </label>
-                    <div class="todo-add-settings">
-                        <label class="todo-add-field" for="todo-priority">
-                            <span>处理时间</span>
-                            <select id="todo-priority" class="todo-add-select">
-                                <option value="thisweek">这周处理</option>
-                                <option value="urgent">紧急</option>
-                                <option value="twodays">这两天</option>
-                                <option value="anytime">随时可以</option>
-                            </select>
-                        </label>
-                        <label class="todo-add-field" for="todo-date">
-                            <span>截止日期</span>
-                            <input type="date" id="todo-date" class="todo-add-date">
-                        </label>
-                        <div class="todo-add-field todo-add-importance">
-                            <span>重要程度</span>
-                            <div class="todo-importance-control">
-                                <input type="range" id="todo-importance" min="1" max="5" value="3">
-                                <span class="importance-label" id="todo-importance-label">★★★☆☆</span>
+                    <details class="todo-add-advanced">
+                        <summary><span>更多设置</span><small>截止日期、优先级、任务关系与备注</small></summary>
+                        <div class="todo-add-settings">
+                            <label class="todo-add-field" for="todo-priority">
+                                <span>处理时间</span>
+                                <select id="todo-priority" class="todo-add-select">
+                                    <option value="thisweek">这周处理</option>
+                                    <option value="urgent">紧急</option>
+                                    <option value="twodays">这两天</option>
+                                    <option value="anytime">随时可以</option>
+                                </select>
+                            </label>
+                            <label class="todo-add-field" for="todo-date">
+                                <span>截止日期</span>
+                                <input type="date" id="todo-date" class="todo-add-date">
+                            </label>
+                            <div class="todo-add-field todo-add-importance">
+                                <span>重要程度</span>
+                                <div class="todo-importance-control">
+                                    <input type="range" id="todo-importance" min="1" max="5" value="3">
+                                    <span class="importance-label" id="todo-importance-label">★★★☆☆</span>
+                                </div>
                             </div>
+                            <label class="todo-add-field" for="todo-parent">
+                                <span>归属任务</span>
+                                <select id="todo-parent" class="todo-add-select" title="第一条任务请保留为顶层任务">
+                                    <option value="">顶层任务</option>
+                                </select>
+                            </label>
+                            <label class="todo-add-field todo-add-dependencies-field" for="todo-dependencies">
+                                <span>前置任务（可多选）</span>
+                                <select id="todo-dependencies" class="todo-add-select todo-dependencies-select" title="先添加其他任务后再选择前置任务" multiple size="2"></select>
+                            </label>
+                            <label class="todo-add-field todo-add-notes" for="todo-notes">
+                                <span>备注</span>
+                                <textarea id="todo-notes" class="todo-add-textarea" rows="2" placeholder="补充背景、下一步或想法（可选）"></textarea>
+                            </label>
                         </div>
-                        <label class="todo-add-field" for="todo-parent">
-                            <span>归属任务</span>
-                            <select id="todo-parent" class="todo-add-select" title="第一条任务请保留为顶层任务">
-                                <option value="">顶层任务</option>
-                            </select>
-                        </label>
-                        <label class="todo-add-field todo-add-dependencies-field" for="todo-dependencies">
-                            <span>前置任务（可多选）</span>
-                            <select id="todo-dependencies" class="todo-add-select todo-dependencies-select" title="先添加其他任务后再选择前置任务" multiple size="2"></select>
-                        </label>
-                    </div>
-                    <label class="todo-add-field todo-add-notes" for="todo-notes">
-                        <span>备注</span>
-                        <textarea id="todo-notes" class="todo-add-textarea" rows="2" placeholder="补充背景、下一步或想法（可选）"></textarea>
-                    </label>
+                    </details>
                     <button id="todo-add-btn" class="todo-add-btn"><span aria-hidden="true">+</span> 添加</button>
                 </div>
 

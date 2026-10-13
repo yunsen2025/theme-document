@@ -9,16 +9,51 @@
 
     const STORAGE_KEY = 'document_todos';
     const COLLAPSED_KEY = 'document_todo_collapsed';
+    const VIEW_KEY = 'document_todo_view';
+    const FILTER_KEY = 'document_todo_filter';
+    const SEARCH_KEY = 'document_todo_search';
     const AJAX_URL = window.HOME + '/wp-admin/admin-ajax.php';
 
     let todos = [];
-    let currentFilter = 'all';
-    let currentView = 'chart';
+    let currentFilter = loadPreference(FILTER_KEY, 'all');
+    let currentView = loadPreference(VIEW_KEY, 'list');
+    let searchQuery = loadPreference(SEARCH_KEY, '');
     let editingId = null;
     let dragItem = null;
+    let dragSnapshot = null;
     let pendingParentId = '';
     let pendingDependencies = [];
     let collapsedIds = loadCollapsedIds();
+    let mutationBusy = {};
+    let createBusy = false;
+
+    function loadPreference(key, fallback) {
+        try { return localStorage.getItem(key) || fallback; } catch (e) { return fallback; }
+    }
+    function savePreference(key, value) { try { localStorage.setItem(key, value); } catch (e) { } }
+
+    function showMessage(message, type) {
+        var stats = document.getElementById('todo-stats');
+        if (!stats) return;
+        var old = stats.querySelector('.todo-client-message');
+        if (old) old.remove();
+        var notice = document.createElement('span');
+        notice.className = 'todo-client-message ' + (type || 'error');
+        notice.setAttribute('role', type === 'error' ? 'alert' : 'status');
+        notice.textContent = message;
+        stats.appendChild(notice);
+        if (type !== 'error') window.setTimeout(function () { if (notice.parentNode) notice.remove(); }, 3500);
+    }
+
+    function snapshotTodos() { return todos.map(function (todo) { return Object.assign({}, todo, { dependencies: dependencyIdsOf(todo).slice() }); }); }
+    function restoreSnapshot(snapshot) { todos = snapshot; saveToLocal(); render(); }
+    function beginMutation(id) {
+        var key = String(id);
+        if (mutationBusy[key]) return false;
+        mutationBusy[key] = true;
+        return true;
+    }
+    function endMutation(id) { delete mutationBusy[String(id)]; }
 
     // Chart state
     let chartCanvas = null;
@@ -46,8 +81,15 @@
                 .catch(reject);
         });
     }
-    function syncFromServer() {
-        ajax('todo_list').then(function (data) { todos = data; saveToLocal(); render(); }).catch(function () { });
+    function syncFromServer(silent) {
+        return ajax('todo_list').then(function (data) {
+            todos = Array.isArray(data) ? data : [];
+            saveToLocal(); render();
+            return todos;
+        }).catch(function (error) {
+            if (!silent) showMessage(typeof error === 'string' ? error : '同步失败，暂时保留本地显示。', 'error');
+            throw error;
+        });
     }
 
     /* ========== 日期计算 ========== */
@@ -279,6 +321,12 @@
         parts.pop();
         return parts.length ? parts.join(' / ') : '';
     }
+    function taskOptionLabel(todo, depth) {
+        var path = breadcrumb(todo);
+        var status = todo.completed == 1 ? '已完成' : (isBlocked(todo) ? '等待前置' : '可执行');
+        var suffix = path ? ' · ' + path : '';
+        return Array(depth + 1).join('　') + todo.title + suffix + ' · #' + todo.id + ' · ' + status;
+    }
     function parentOptions(currentId, selectedId) {
         var excluded = {};
         if (currentId) {
@@ -297,7 +345,7 @@
             var id = String(row.todo.id);
             if (excluded[id]) return;
             html += '<option value="' + id + '"' + (sameId(id, selectedId) ? ' selected' : '') + '>' +
-                Array(row.depth + 1).join('　') + escapeHtml(row.todo.title) + '</option>';
+                escapeHtml(taskOptionLabel(row.todo, row.depth)) + '</option>';
         });
         return html;
     }
@@ -313,7 +361,7 @@
             var id = String(row.todo.id);
             if (excluded[id]) return;
             html += '<option value="' + id + '"' + (selected.indexOf(id) !== -1 ? ' selected' : '') + '>' +
-                Array(row.depth + 1).join('　') + escapeHtml(row.todo.title) + '</option>';
+                escapeHtml(taskOptionLabel(row.todo, row.depth)) + '</option>';
         });
         return html || '<option value="" disabled>请先添加其他任务</option>';
     }
@@ -338,13 +386,16 @@
         saveCollapsedIds(); render();
     }
     function updateParent(todo, parentId) {
-        var oldParent = parentIdOf(todo);
+        if (!beginMutation(todo.id)) return;
+        var snapshot = snapshotTodos();
         todo.parent_id = parentId ? String(parentId) : null;
         todo.sort_order = -1;
         saveToLocal(); render();
-        ajax('todo_update', { id: todo.id, parent_id: parentId || '' }).catch(function () {
-            todo.parent_id = oldParent || null;
-            saveToLocal(); render();
+        ajax('todo_update', { id: todo.id, parent_id: parentId || '' }).then(function () {
+            endMutation(todo.id); return syncFromServer(true).catch(function () { showMessage('层级已保存，但刷新任务列表失败。', 'error'); });
+        }).catch(function (error) {
+            endMutation(todo.id); restoreSnapshot(snapshot);
+            showMessage(typeof error === 'string' ? error : '任务层级保存失败，已恢复原关系。', 'error');
         });
     }
     function indentTodo(id) {
@@ -362,7 +413,9 @@
     function addTodo() {
         var input = document.getElementById('todo-input');
         var title = input.value.trim();
-        if (!title) return;
+        if (!title) { showMessage('请先填写任务名称。', 'error'); input.focus(); return; }
+        if (createBusy) return;
+        createBusy = true;
         var priority = document.getElementById('todo-priority').value;
         var dueDate = document.getElementById('todo-date').value;
         var importance = parseInt(document.getElementById('todo-importance').value) || 3;
@@ -384,55 +437,76 @@
 
         ajax('todo_create', { title: title, priority: priority, due_date: dueDate, importance: importance, parent_id: parentId, notes: notes, dependencies: JSON.stringify(dependencies) })
             .then(function (row) {
+                createBusy = false;
                 var idx = todos.findIndex(function (t) { return t.id === tempId; });
                 if (idx !== -1) todos[idx] = row;
                 pendingParentId = ''; pendingDependencies = [];
-                saveToLocal(); render();
+                saveToLocal(); render(); syncFromServer(true).catch(function () { });
             })
             .catch(function (error) {
+                createBusy = false;
                 todos = todos.filter(function (t) { return t.id !== tempId; });
                 pendingParentId = parentId || ''; pendingDependencies = dependencies.slice();
                 saveToLocal(); render();
                 input.value = title;
-                alert(typeof error === 'string' ? error : '保存待办失败，请检查归属任务和前置任务是否有效。');
+                document.getElementById('todo-date').value = dueDate;
+                document.getElementById('todo-notes').value = notes;
+                document.getElementById('todo-priority').value = priority;
+                document.getElementById('todo-importance').value = String(importance);
+                var importanceLabel = document.getElementById('todo-importance-label');
+                if (importanceLabel) importanceLabel.textContent = importanceStars(importance);
+                showMessage(typeof error === 'string' ? error : '保存待办失败，请检查归属任务和前置任务是否有效。', 'error');
             });
     }
 
     function toggleTodo(id) {
         var todo = todos.find(function (t) { return t.id == id; });
-        if (!todo || todo.archived == 1) return;
+        if (!todo || todo.archived == 1 || !beginMutation(id)) return;
+        var snapshot = snapshotTodos();
         todo.completed = todo.completed == 1 ? 0 : 1;
         saveToLocal(); render();
-        ajax('todo_update', { id: id, completed: todo.completed });
+        ajax('todo_update', { id: id, completed: todo.completed }).then(function () {
+            endMutation(id); return syncFromServer(true).catch(function () { showMessage('完成状态已保存，但刷新任务列表失败。', 'error'); });
+        }).catch(function (error) {
+            endMutation(id); restoreSnapshot(snapshot);
+            showMessage(typeof error === 'string' ? error : '完成状态保存失败，已恢复原状态。', 'error');
+        });
     }
 
     function archiveTodo(id) {
         var todo = todos.find(function (t) { return t.id == id; });
-        if (!todo || todo.archived == 1) return;
+        if (!todo || todo.archived == 1 || !beginMutation(id)) return;
+        var snapshot = snapshotTodos();
         todo.archived = 1;
         todo.archived_at = new Date().toISOString().slice(0, 19).replace('T', ' ');
         saveToLocal(); render();
-        ajax('todo_update', { id: id, archived: 1 }).catch(function () {
-            todo.archived = 0;
-            todo.archived_at = null;
-            saveToLocal(); render();
+        ajax('todo_update', { id: id, archived: 1 }).then(function () {
+            endMutation(id); return syncFromServer(true).catch(function () { showMessage('归档已保存，但刷新任务列表失败。', 'error'); });
+        }).catch(function (error) {
+            endMutation(id); restoreSnapshot(snapshot);
+            showMessage(typeof error === 'string' ? error : '归档失败，已恢复原状态。', 'error');
         });
     }
 
     function restoreTodo(id) {
         var todo = todos.find(function (t) { return t.id == id; });
-        if (!todo || todo.archived != 1) return;
+        if (!todo || todo.archived != 1 || !beginMutation(id)) return;
+        var snapshot = snapshotTodos();
         todo.archived = 0;
         todo.archived_at = null;
         saveToLocal(); render();
-        ajax('todo_update', { id: id, archived: 0 }).catch(function () {
-            todo.archived = 1;
-            saveToLocal(); render();
+        ajax('todo_update', { id: id, archived: 0 }).then(function () {
+            endMutation(id); return syncFromServer(true).catch(function () { showMessage('恢复已保存，但刷新任务列表失败。', 'error'); });
+        }).catch(function (error) {
+            endMutation(id); restoreSnapshot(snapshot);
+            showMessage(typeof error === 'string' ? error : '恢复失败，已恢复原状态。', 'error');
         });
     }
 
     function deleteTodo(id) {
         if (!confirm('确定删除这条待办？')) return;
+        if (!beginMutation(id)) return;
+        var snapshot = snapshotTodos();
         var target = todos.find(function (todo) { return sameId(todo.id, id); });
         var promotedParent = target ? parentIdOf(target) : '';
         todos.forEach(function (todo) {
@@ -441,13 +515,19 @@
         });
         todos = todos.filter(function (t) { return t.id != id; });
         saveToLocal(); render();
-        ajax('todo_delete', { id: id });
+        ajax('todo_delete', { id: id }).then(function () {
+            endMutation(id); return syncFromServer(true).catch(function () { showMessage('删除已保存，但刷新任务列表失败。', 'error'); });
+        }).catch(function (error) {
+            endMutation(id); restoreSnapshot(snapshot);
+            showMessage(typeof error === 'string' ? error : '删除失败，已恢复任务及其关系。', 'error');
+        });
     }
 
     function startEdit(id) { editingId = id; render(); var el = document.getElementById('edit-title-' + id); if (el) { el.focus(); el.select(); } }
     function editFromDag(id) { setView('list'); startEdit(id); }
 
     function saveEdit(id) {
+        if (!beginMutation(id)) return;
         var el = document.getElementById('edit-title-' + id);
         var priorityEl = document.getElementById('edit-priority-' + id);
         var dateEl = document.getElementById('edit-date-' + id);
@@ -456,7 +536,8 @@
         var parentEl = document.getElementById('edit-parent-' + id);
         var dependenciesEl = document.getElementById('edit-dependencies-' + id);
         var todo = todos.find(function (t) { return t.id == id; });
-        if (!todo) return;
+        if (!todo) { endMutation(id); return; }
+        var snapshot = snapshotTodos();
         var data = { id: id };
         var newTitle = el ? el.value.trim() : todo.title;
         todo.title = newTitle || todo.title; data.title = todo.title;
@@ -470,20 +551,28 @@
             data.dependencies = JSON.stringify(todo.dependencies);
         }
         editingId = null; saveToLocal(); render();
-        ajax('todo_update', data);
+        ajax('todo_update', data).then(function () {
+            endMutation(id); return syncFromServer(true).catch(function () { showMessage('编辑已保存，但刷新任务列表失败。', 'error'); });
+        }).catch(function (error) {
+            endMutation(id); restoreSnapshot(snapshot); editingId = null;
+            showMessage(typeof error === 'string' ? error : '编辑保存失败，已恢复原任务。', 'error');
+        });
     }
 
     function cancelEdit() { editingId = null; render(); }
     function setFilter(f) {
-        currentFilter = f;
-        if (f === 'archived' && currentView === 'chart') {
+        currentFilter = ['all', 'active', 'completed', 'archived'].indexOf(f) !== -1 ? f : 'all';
+        savePreference(FILTER_KEY, currentFilter);
+        if (currentFilter === 'archived' && currentView === 'chart') {
             setView('list');
             return;
         }
         render();
     }
     function setView(v) {
+        if (['list', 'focus', 'dag', 'chart'].indexOf(v) === -1) v = 'list';
         currentView = v;
+        savePreference(VIEW_KEY, currentView);
         document.querySelectorAll('.todo-view-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.view === v); });
         document.getElementById('todo-list').style.display = (v === 'list' || v === 'focus') ? '' : 'none';
         document.getElementById('todo-dag-wrap').style.display = v === 'dag' ? '' : 'none';
@@ -495,7 +584,7 @@
     }
 
     /* ========== 拖拽 ========== */
-    function handleDragStart(e) { dragItem = e.currentTarget; dragItem.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }
+    function handleDragStart(e) { dragSnapshot = snapshotTodos(); dragItem = e.currentTarget; dragItem.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }
     function handleDragOver(e) {
         e.preventDefault();
         var target = e.target.closest('.todo-item, .todo-child-card');
@@ -523,13 +612,25 @@
                 orders.push({ id: id, parent_id: parentId, sort_order: todo.sort_order });
             }
         });
-        saveToLocal(); ajax('todo_reorder', { orders: JSON.stringify(orders) });
+        var snapshot = dragSnapshot || snapshotTodos();
+        dragSnapshot = null;
+        saveToLocal();
+        ajax('todo_reorder', { orders: JSON.stringify(orders) }).then(function () { return syncFromServer(true).catch(function () { showMessage('排序已保存，但刷新任务列表失败。', 'error'); }); }).catch(function (error) {
+            restoreSnapshot(snapshot);
+            showMessage(typeof error === 'string' ? error : '排序保存失败，已恢复原顺序。', 'error');
+        });
     }
 
     /* ========== 渲染 ========== */
+    function matchesSearch(todo) {
+        if (!searchQuery) return true;
+        var haystack = [todo.title, todo.notes, breadcrumb(todo)].join(' ').toLowerCase();
+        return haystack.indexOf(searchQuery.toLowerCase()) !== -1;
+    }
     function getFilteredTodos() {
         return todos.filter(function (t) {
             var archived = t.archived == 1;
+            if (!matchesSearch(t)) return false;
             if (currentFilter === 'archived') return archived;
             if (archived) return false;
             if (currentFilter === 'active') return t.completed == 0;
@@ -546,7 +647,8 @@
         var archived = todos.filter(function (t) { return t.archived == 1; }).length;
         var percent = total > 0 ? Math.round(done / total * 100) : 0;
 
-        document.getElementById('todo-stats').innerHTML = '<span>共 ' + total + ' 项</span><span>待完成 ' + (total - done) + '</span><span>已完成 ' + done + '</span><span>已归档 ' + archived + '</span><span>' + percent + '%</span>';
+        var stats = document.getElementById('todo-stats');
+        if (stats) stats.innerHTML = '<span>共 ' + total + ' 项</span><span>待完成 ' + (total - done) + '</span><span>已完成 ' + done + '</span><span>已归档 ' + archived + '</span><span>' + percent + '%</span>' + (searchQuery ? '<span>搜索：' + escapeHtml(searchQuery) + '</span>' : '');
         var pb = document.getElementById('todo-progress-bar'); if (pb) pb.style.width = percent + '%';
         document.querySelectorAll('.todo-filter-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.filter === currentFilter); });
         populateParentSelect();
@@ -753,10 +855,9 @@
     }
 
     function rootHasFilterMatch(root) {
-        if (currentFilter === 'all') return true;
-        if (currentFilter === 'active') return root.completed == 0 || descendantTasks(root.id, todos).some(function (task) { return task.completed == 0; });
-        if (currentFilter === 'completed') return root.completed == 1 || descendantTasks(root.id, todos).some(function (task) { return task.completed == 1; });
-        return true;
+        return getFilteredTodos().some(function (todo) {
+            return sameId(todo.id, root.id) || descendantTasks(root.id, todos).some(function (task) { return sameId(task.id, todo.id); });
+        });
     }
 
     function attachTreeDragHandlers(listEl) {
@@ -786,7 +887,8 @@
             return (parseInt(a.sort_order) || 0) - (parseInt(b.sort_order) || 0);
         });
         if (roots.length === 0) {
-            listEl.innerHTML = '<div class="todo-empty"><div class="todo-empty-icon">&#128203;</div>' + (currentFilter === 'all' ? '暂无待办事项，添加一个吧' : currentFilter === 'active' ? '所有任务都完成了！' : currentFilter === 'completed' ? '还没有已完成的待办' : '还没有已归档的事项') + '</div>';
+            var emptyText = searchQuery ? '没有匹配的任务' : (currentFilter === 'all' ? '暂无待办事项，添加一个吧' : currentFilter === 'active' ? '所有任务都完成了！' : currentFilter === 'completed' ? '还没有已完成的待办' : '还没有已归档的事项');
+            listEl.innerHTML = '<div class="todo-empty"><div class="todo-empty-icon">&#128203;</div>' + emptyText + '</div>';
             return;
         }
         listEl.innerHTML = roots.map(renderMainCard).join('');
@@ -796,7 +898,8 @@
     function renderFocus() {
         var listEl = document.getElementById('todo-list');
         listEl.classList.add('todo-tree-list', 'todo-focus-list');
-        var leaves = todos.filter(function (todo) {
+        var visible = getFilteredTodos();
+        var leaves = visible.filter(function (todo) {
             return todo.archived != 1 && todo.completed != 1 && !hasChildren(todo) && !isBlocked(todo);
         }).sort(function (a, b) {
             var priority = priorityLevel(getEffectivePriority(b)) - priorityLevel(getEffectivePriority(a));
@@ -805,7 +908,7 @@
             return ad.localeCompare(bd) || (parseInt(b.importance) || 0) - (parseInt(a.importance) || 0);
         });
         if (!leaves.length) {
-            listEl.innerHTML = '<div class="todo-empty"><div class="todo-empty-icon">&#127919;</div>目前没有未完成的叶子任务</div>';
+            listEl.innerHTML = '<div class="todo-empty"><div class="todo-empty-icon">&#127919;</div>' + (searchQuery ? '没有匹配的可执行任务' : '目前没有未完成的可执行任务') + '</div>';
             return;
         }
         listEl.innerHTML = '<div class="todo-focus-intro">专注视图只显示每棵任务树中可以直接执行的未完成事项，并按紧急程度排序。</div>' + leaves.map(function (todo) { return renderTaskCard(todo, 0, true); }).join('');
@@ -889,9 +992,9 @@
     function renderDag(filtered) {
         var wrap = document.getElementById('todo-dag-wrap');
         if (!wrap) return;
-        var source = currentFilter === 'archived' ? filtered : todos.filter(function (todo) { return todo.archived != 1; });
+        var source = filtered;
         if (!source.length) {
-            wrap.innerHTML = '<div class="todo-empty"><div class="todo-empty-icon">&#128279;</div>暂无可展示的依赖关系</div>';
+            wrap.innerHTML = '<div class="todo-empty"><div class="todo-empty-icon">&#128279;</div>' + (searchQuery ? '没有匹配的依赖关系' : '暂无可展示的依赖关系') + '</div>';
             return;
         }
 
@@ -1696,6 +1799,23 @@
         // 事件通过 onclick 直接绑定到动态渲染的按钮上
     }
 
+    function initSearchControl() {
+        var filters = document.querySelector('.todo-filters');
+        if (!filters || document.getElementById('todo-search')) return;
+        var label = document.createElement('label');
+        label.className = 'todo-search-control';
+        label.setAttribute('for', 'todo-search');
+        label.innerHTML = '<span>搜索</span><input id="todo-search" type="search" placeholder="搜索标题、备注或项目路径" autocomplete="off">';
+        filters.parentNode.insertBefore(label, filters);
+        var input = document.getElementById('todo-search');
+        input.value = searchQuery;
+        input.addEventListener('input', function () {
+            searchQuery = this.value.trim();
+            savePreference(SEARCH_KEY, searchQuery);
+            render();
+        });
+    }
+
     /* ========== Helpers ========== */
     function escapeHtml(str) { var d = document.createElement('div'); d.textContent = str == null ? '' : String(str); return d.innerHTML; }
     function escapeAttribute(str) { return escapeHtml(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
@@ -1707,10 +1827,12 @@
         // 默认矩阵视图，应用宽屏模式
         var mainMain = document.querySelector('.main-main');
         if (mainMain) mainMain.classList.add('todo-wide-mode');
-        render(); syncFromServer();
+        initSearchControl();
+        setView(currentView);
+        syncFromServer(false).catch(function () { });
 
         document.getElementById('todo-add-btn').addEventListener('click', addTodo);
-        document.getElementById('todo-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') addTodo(); });
+        document.getElementById('todo-input').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); addTodo(); } });
         document.getElementById('todo-parent').addEventListener('change', function () { pendingParentId = this.value || ''; });
         document.getElementById('todo-dependencies').addEventListener('change', function () { pendingDependencies = Array.from(this.selectedOptions).map(function (option) { return option.value; }); });
         document.querySelectorAll('.todo-filter-btn').forEach(function (b) { b.addEventListener('click', function () { setFilter(this.dataset.filter); }); });
