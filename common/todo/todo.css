@@ -255,17 +255,16 @@
     align-items: start;
 }
 
-/* 树视图：保留卡片质感，但让层级和操作可以纵向展开。 */
+/* 树视图：普通任务保持方块，有子任务的主卡片按内容自然增高。 */
 .todo-list.todo-tree-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    align-items: stretch;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+    gap: 12px;
+    align-items: start;
 }
 
 .todo-tree-list .todo-tree-item {
-    aspect-ratio: auto;
-    min-height: 104px;
+    min-height: 0;
     margin-left: calc(var(--todo-depth, 0) * 28px);
 }
 
@@ -338,13 +337,20 @@
 }
 
 .todo-main-card > .todo-item {
-    aspect-ratio: auto;
-    min-height: 104px;
+    min-height: 0;
     margin-left: 0;
     border: 0;
     border-radius: 0;
     background: transparent;
     box-shadow: none;
+}
+
+.todo-main-card.single-task > .todo-item {
+    aspect-ratio: 1 / 1;
+}
+
+.todo-main-card.has-children > .todo-item {
+    min-height: 104px;
 }
 
 .todo-main-card > .todo-item:hover {

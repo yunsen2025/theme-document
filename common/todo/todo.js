@@ -738,7 +738,8 @@
         var children = childPreview(todo);
         var nextChild = nextAvailableChild(todo);
         var visibleChildren = children.slice(0, 3);
-        var html = '<div class="todo-main-card">' + renderTaskCard(todo, 0, false);
+        var cardClass = visibleChildren.length ? ' has-children' : ' single-task';
+        var html = '<div class="todo-main-card' + cardClass + '">' + renderTaskCard(todo, 0, false);
         if (visibleChildren.length) {
             html += '<div class="todo-child-list">' + visibleChildren.map(function (child) {
                 return renderChildCard(child, nextChild && sameId(nextChild.id, child.id), 1);
