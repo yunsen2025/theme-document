@@ -587,7 +587,8 @@ body.todo-dragging .todo-root-drop-zone {
 
 .todo-child-card {
     display: grid;
-    grid-template-columns: 4px 22px minmax(0, 1fr) auto;
+    grid-template-columns: 4px 22px minmax(0, 1fr);
+    grid-template-rows: auto auto;
     min-height: 68px;
     border: 1px solid var(--theme-border-color, #e8e8e8);
     border-radius: 6px;
@@ -612,6 +613,8 @@ body.todo-dragging .todo-root-drop-zone {
 }
 
 .todo-child-card .todo-child-content {
+    grid-column: 3;
+    grid-row: 1;
     min-width: 0;
     padding: 12px 0;
 }
@@ -663,7 +666,11 @@ body.todo-dragging .todo-root-drop-zone {
     display: flex;
     align-items: center;
     gap: 2px;
-    padding: 0 8px;
+    grid-column: 3;
+    grid-row: 2;
+    justify-content: flex-start;
+    min-width: 0;
+    padding: 4px 8px 8px 0;
 }
 
 .todo-child-actions .todo-action-btn {
@@ -2130,9 +2137,7 @@ body.todo-dragging .todo-root-drop-zone {
     }
 
     .todo-child-actions {
-        grid-column: 3;
-        justify-content: flex-start;
-        padding: 0 6px 8px 0;
+        padding-right: 6px;
     }
 }
 
