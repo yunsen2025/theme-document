@@ -280,7 +280,7 @@
             excludeBranches(currentId);
         }
         var html = '<option value="">顶层任务</option>';
-        treeRows(todos.filter(function (todo) { return todo.archived != 1; }), false).forEach(function (row) {
+        treeRows(todos.filter(function (todo) { return todo.archived != 1 && String(todo.id).indexOf('temp_') !== 0; }), false).forEach(function (row) {
             var id = String(row.todo.id);
             if (excluded[id]) return;
             html += '<option value="' + id + '"' + (sameId(id, selectedId) ? ' selected' : '') + '>' +
@@ -296,7 +296,7 @@
             descendantTasks(currentId, todos).forEach(function (task) { excluded[String(task.id)] = true; });
         }
         var html = '';
-        treeRows(todos.filter(function (todo) { return todo.archived != 1; }), false).forEach(function (row) {
+        treeRows(todos.filter(function (todo) { return todo.archived != 1 && String(todo.id).indexOf('temp_') !== 0; }), false).forEach(function (row) {
             var id = String(row.todo.id);
             if (excluded[id]) return;
             html += '<option value="' + id + '"' + (selected.indexOf(id) !== -1 ? ' selected' : '') + '>' +
@@ -353,10 +353,10 @@
         var priority = document.getElementById('todo-priority').value;
         var dueDate = document.getElementById('todo-date').value;
         var importance = parseInt(document.getElementById('todo-importance').value) || 3;
-        var parentId = document.getElementById('todo-parent').value;
+        var parentId = document.getElementById('todo-parent').value || pendingParentId;
         var notes = document.getElementById('todo-notes').value.trim();
         var dependenciesEl = document.getElementById('todo-dependencies');
-        var dependencies = dependenciesEl ? Array.from(dependenciesEl.selectedOptions).map(function (option) { return option.value; }) : [];
+        var dependencies = dependenciesEl ? Array.from(dependenciesEl.selectedOptions).map(function (option) { return option.value; }) : pendingDependencies.slice();
 
         var tempId = 'temp_' + Date.now();
         var tempTodo = {
@@ -367,17 +367,21 @@
             updated_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
         };
         todos.unshift(tempTodo); saveToLocal(); render();
-        input.value = ''; document.getElementById('todo-date').value = ''; document.getElementById('todo-notes').value = ''; pendingParentId = ''; pendingDependencies = []; populateParentSelect(); populateDependenciesSelect(); input.focus();
+        input.value = ''; document.getElementById('todo-date').value = ''; document.getElementById('todo-notes').value = ''; input.focus();
 
         ajax('todo_create', { title: title, priority: priority, due_date: dueDate, importance: importance, parent_id: parentId, notes: notes, dependencies: JSON.stringify(dependencies) })
             .then(function (row) {
                 var idx = todos.findIndex(function (t) { return t.id === tempId; });
                 if (idx !== -1) todos[idx] = row;
+                pendingParentId = ''; pendingDependencies = [];
                 saveToLocal(); render();
             })
-            .catch(function () {
+            .catch(function (error) {
                 todos = todos.filter(function (t) { return t.id !== tempId; });
+                pendingParentId = parentId || ''; pendingDependencies = dependencies.slice();
                 saveToLocal(); render();
+                input.value = title;
+                alert(typeof error === 'string' ? error : '保存待办失败，请检查归属任务和前置任务是否有效。');
             });
     }
 
@@ -1690,6 +1694,8 @@
 
         document.getElementById('todo-add-btn').addEventListener('click', addTodo);
         document.getElementById('todo-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') addTodo(); });
+        document.getElementById('todo-parent').addEventListener('change', function () { pendingParentId = this.value || ''; });
+        document.getElementById('todo-dependencies').addEventListener('change', function () { pendingDependencies = Array.from(this.selectedOptions).map(function (option) { return option.value; }); });
         document.querySelectorAll('.todo-filter-btn').forEach(function (b) { b.addEventListener('click', function () { setFilter(this.dataset.filter); }); });
         document.querySelectorAll('.todo-view-btn').forEach(function (b) { b.addEventListener('click', function () { setView(this.dataset.view); }); });
 
