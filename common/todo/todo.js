@@ -927,33 +927,91 @@
         sidebar.innerHTML = html;
     }
 
+    function todoActionId(id) {
+        return /^\d+$/.test(String(id)) ? String(id) : "'" + escapeAttribute(id) + "'";
+    }
+
+    function renderTaskCheckbox(todo, actionId, className) {
+        var isArchived = todo.archived == 1;
+        var classes = 'todo-checkbox' + (className ? ' ' + className : '') + (isArchived ? ' disabled' : '');
+        var attributes = ' role="checkbox" aria-checked="' + (todo.completed == 1 ? 'true' : 'false') + '"';
+        if (isArchived) {
+            attributes += ' aria-disabled="true"';
+        } else {
+            attributes += ' tabindex="0" onclick="window._todo.toggle(' + actionId + ')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();window._todo.toggle(' + actionId + ')}"';
+        }
+        return '<div class="' + classes + '"' + attributes + '></div>';
+    }
+
+    function renderTaskEditForm(todo, actionId) {
+        var itemId = todo.id;
+        var html = '<input class="todo-title-input" id="edit-title-' + itemId + '" value="' + escapeAttribute(todo.title) + '" onkeydown="if(event.key===\'Enter\')window._todo.saveEdit(' + actionId + ');if(event.key===\'Escape\')window._todo.cancelEdit()">';
+        html += '<div class="todo-edit-inline">';
+        html += '<select id="edit-priority-' + itemId + '"><option value="urgent"' + (todo.priority === 'urgent' || todo.priority === 'high' ? ' selected' : '') + '>紧急</option><option value="twodays"' + (todo.priority === 'twodays' ? ' selected' : '') + '>这两天</option><option value="thisweek"' + (todo.priority === 'thisweek' || todo.priority === 'medium' ? ' selected' : '') + '>这周处理</option><option value="anytime"' + (todo.priority === 'anytime' || todo.priority === 'low' ? ' selected' : '') + '>随时可以</option></select>';
+        html += '<select id="edit-importance-' + itemId + '">';
+        for (var i = 5; i >= 1; i--) html += '<option value="' + i + '"' + (parseInt(todo.importance) === i ? ' selected' : '') + '>' + importanceStars(i) + '</option>';
+        html += '</select><input type="date" id="edit-date-' + itemId + '" value="' + escapeAttribute(todo.due_date || '') + '">';
+        html += '<select id="edit-parent-' + itemId + '">' + parentOptions(itemId, parentIdOf(todo)) + '</select>';
+        html += '<select id="edit-dependencies-' + itemId + '" class="todo-dependencies-select" multiple size="2">' + dependencyOptions(itemId, dependencyIdsOf(todo)) + '</select>';
+        html += '</div><textarea class="todo-edit-notes" id="edit-notes-' + itemId + '" rows="2" placeholder="备注">' + escapeHtml(todo.notes || '') + '</textarea>';
+        return html + '<div class="todo-edit-actions"><button class="todo-action-btn" onclick="window._todo.saveEdit(' + actionId + ')" aria-label="保存" title="保存">&#10003;</button><button class="todo-action-btn" onclick="window._todo.cancelEdit()" aria-label="取消" title="取消">&#10005;</button></div>';
+    }
+
+    function renderTaskMeta(todo, treeP, effCss, hasChildTasks, itemId) {
+        var upgraded = treeP !== (todo.priority || 'thisweek') && todo.completed != 1;
+        var html = '<div class="todo-meta"><span class="todo-priority-tag ' + effCss + '">' + priorityLabel(treeP) + (upgraded ? ' ↑' : '') + '</span>';
+        if (hasChildTasks) {
+            var progress = treeProgress(todo);
+            var nextChild = nextAvailableChild(todo);
+            if (progress) html += '<span class="todo-progress-tag">' + progress.done + ' / ' + progress.total + ' 已完成</span>';
+            if (treeP !== (todo.priority || 'thisweek')) html += '<span class="todo-inherited-priority">子任务最高：' + priorityLabel(treeP) + '</span>';
+            if (nextChild) html += '<span class="todo-next-badge">下一步：' + escapeHtml(nextChild.title) + '</span>';
+        } else {
+            html += '<span class="todo-importance-tag">' + importanceStars(todo.importance) + '</span>';
+        }
+        html += pomodoroCountHtml(itemId);
+        if (todo.due_date) html += '<span class="todo-due"><span class="todo-due-icon">&#128197;</span>' + formatDate(todo.due_date) + '</span>' + getCountdownHtml(todo);
+        return html + '</div>';
+    }
+
+    function renderTaskActions(todo, actionId, hasChildTasks, previous, isArchived) {
+        var itemId = todo.id;
+        var html = '<div class="todo-actions">';
+        if (hasChildTasks) {
+            var collapsed = collapsedIds[String(itemId)];
+            html += '<button class="todo-action-btn collapse" onclick="window._todo.collapse(' + actionId + ')" aria-label="' + (collapsed ? '展开子任务' : '折叠子任务') + '" title="' + (collapsed ? '展开子任务' : '折叠子任务') + '">' + (collapsed ? '&#9656;' : '&#9662;') + '</button>';
+        }
+        if (!isArchived) {
+            html += '<button class="todo-action-btn child" onclick="window._todo.addChild(' + actionId + ')" aria-label="新建子任务" title="新建子任务">&#8627;</button>';
+            if (parentIdOf(todo)) html += '<button class="todo-action-btn" onclick="window._todo.outdent(' + actionId + ')" aria-label="提升层级" title="提升层级">&#8676;</button>';
+            if (previous) html += '<button class="todo-action-btn" onclick="window._todo.indent(' + actionId + ')" aria-label="降低层级" title="降低层级">&#8677;</button>';
+        }
+        if (isArchived) {
+            html += '<button class="todo-action-btn restore" onclick="window._todo.restore(' + actionId + ')" aria-label="恢复到列表" title="恢复到列表">&#8635;</button>';
+        } else {
+            if (todo.completed != 1) html += '<button class="todo-action-btn pomodoro" onclick="window._todo.startPomodoro(' + actionId + ')" aria-label="番茄钟" title="番茄钟">&#9654;</button>';
+            html += '<button class="todo-action-btn" onclick="window._todo.startEdit(' + actionId + ')" aria-label="编辑" title="编辑">&#9998;</button><button class="todo-action-btn archive" onclick="window._todo.archive(' + actionId + ')" aria-label="归档" title="归档">&#128451;</button>';
+        }
+        return html + '<button class="todo-action-btn delete" onclick="window._todo.deleteTodo(' + actionId + ')" aria-label="删除" title="删除">&#128465;</button></div>';
+    }
+
     function renderTaskCard(todo, depth, focusMode) {
         var isEditing = editingId == todo.id;
         var children = childrenOf(todo.id, todos);
         var hasChildTasks = children.length > 0;
         var treeP = hasChildTasks ? treePriority(todo) : getEffectivePriority(todo);
         var effCss = priorityCss(treeP);
-        var upgraded = treeP !== (todo.priority || 'thisweek') && todo.completed != 1;
         var isArchived = todo.archived == 1;
-        var previous = previousSibling(todo);
         var itemId = todo.id;
-        var actionId = /^\d+$/.test(String(itemId)) ? String(itemId) : "'" + escapeAttribute(itemId) + "'";
+        var actionId = todoActionId(itemId);
         var canDrag = !isEditing && !focusMode && sortingEnabled();
-        var html = '<div class="todo-item todo-tree-item' + (isEditing ? ' editing' : '') + (todo.completed == 1 ? ' completed' : '') + (isArchived ? ' archived' : '') + (collapsedIds[String(itemId)] ? ' collapsed' : '') + (isPomodoring(itemId) ? ' pomodoro-active' : '') + '" data-id="' + itemId + '" data-parent-id="' + parentIdOf(todo) + '" style="--todo-depth:' + (depth || 0) + ';" draggable="' + canDrag + '">';
+        var classes = 'todo-item todo-tree-item' + (isEditing ? ' editing' : '') + (todo.completed == 1 ? ' completed' : '') + (isArchived ? ' archived' : '') + (collapsedIds[String(itemId)] ? ' collapsed' : '') + (isPomodoring(itemId) ? ' pomodoro-active' : '');
+        var html = '<div class="' + classes + '" data-id="' + itemId + '" data-parent-id="' + parentIdOf(todo) + '" style="--todo-depth:' + (depth || 0) + ';" draggable="' + canDrag + '">';
         html += '<div class="todo-priority-bar ' + effCss + '"></div><div class="todo-body">';
-        html += '<div class="todo-checkbox' + (isArchived ? ' disabled' : '') + '" role="checkbox" aria-checked="' + (todo.completed == 1 ? 'true' : 'false') + '"' + (isArchived ? ' aria-disabled="true"' : ' tabindex="0" onclick="window._todo.toggle(' + actionId + ')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();window._todo.toggle(' + actionId + ')}"') + '></div>';
+        html += renderTaskCheckbox(todo, actionId);
         html += '<div class="todo-content">';
         if (isEditing) {
-            html += '<input class="todo-title-input" id="edit-title-' + itemId + '" value="' + escapeAttribute(todo.title) + '" onkeydown="if(event.key===\'Enter\')window._todo.saveEdit(' + actionId + ');if(event.key===\'Escape\')window._todo.cancelEdit()">';
-            html += '<div class="todo-edit-inline">';
-            html += '<select id="edit-priority-' + itemId + '"><option value="urgent"' + (todo.priority === 'urgent' || todo.priority === 'high' ? ' selected' : '') + '>紧急</option><option value="twodays"' + (todo.priority === 'twodays' ? ' selected' : '') + '>这两天</option><option value="thisweek"' + (todo.priority === 'thisweek' || todo.priority === 'medium' ? ' selected' : '') + '>这周处理</option><option value="anytime"' + (todo.priority === 'anytime' || todo.priority === 'low' ? ' selected' : '') + '>随时可以</option></select>';
-            html += '<select id="edit-importance-' + itemId + '">';
-            for (var i = 5; i >= 1; i--) html += '<option value="' + i + '"' + (parseInt(todo.importance) === i ? ' selected' : '') + '>' + importanceStars(i) + '</option>';
-            html += '</select><input type="date" id="edit-date-' + itemId + '" value="' + escapeAttribute(todo.due_date || '') + '">';
-            html += '<select id="edit-parent-' + itemId + '">' + parentOptions(itemId, parentIdOf(todo)) + '</select>';
-            html += '<select id="edit-dependencies-' + itemId + '" class="todo-dependencies-select" multiple size="2">' + dependencyOptions(itemId, dependencyIdsOf(todo)) + '</select>';
-            html += '</div><textarea class="todo-edit-notes" id="edit-notes-' + itemId + '" rows="2" placeholder="备注">' + escapeHtml(todo.notes || '') + '</textarea>';
-                html += '<div class="todo-edit-actions"><button class="todo-action-btn" onclick="window._todo.saveEdit(' + actionId + ')" aria-label="保存" title="保存">&#10003;</button><button class="todo-action-btn" onclick="window._todo.cancelEdit()" aria-label="取消" title="取消">&#10005;</button></div>';
+            html += renderTaskEditForm(todo, actionId);
         } else {
             if (focusMode) {
                 var path = breadcrumb(todo);
@@ -961,36 +1019,10 @@
             }
             html += '<div class="todo-title">' + escapeHtml(todo.title) + '</div>';
             if (todo.notes) html += '<div class="todo-notes-preview">' + escapeHtml(todo.notes) + '</div>';
-            html += '<div class="todo-meta"><span class="todo-priority-tag ' + effCss + '">' + priorityLabel(treeP) + (upgraded ? ' ↑' : '') + '</span>';
-            if (hasChildTasks) {
-                var progress = treeProgress(todo);
-                var nextChild = nextAvailableChild(todo);
-                if (progress) html += '<span class="todo-progress-tag">' + progress.done + ' / ' + progress.total + ' 已完成</span>';
-                if (treeP !== (todo.priority || 'thisweek')) html += '<span class="todo-inherited-priority">子任务最高：' + priorityLabel(treeP) + '</span>';
-                if (nextChild) html += '<span class="todo-next-badge">下一步：' + escapeHtml(nextChild.title) + '</span>';
-            } else {
-                html += '<span class="todo-importance-tag">' + importanceStars(todo.importance) + '</span>';
-            }
-            html += pomodoroCountHtml(itemId);
-            if (todo.due_date) html += '<span class="todo-due"><span class="todo-due-icon">&#128197;</span>' + formatDate(todo.due_date) + '</span>' + getCountdownHtml(todo);
-            html += '</div>';
+            html += renderTaskMeta(todo, treeP, effCss, hasChildTasks, itemId);
         }
         html += '</div>';
-        if (!isEditing) {
-            html += '<div class="todo-actions">';
-            if (hasChildTasks) html += '<button class="todo-action-btn collapse" onclick="window._todo.collapse(' + actionId + ')" aria-label="' + (collapsedIds[String(itemId)] ? '展开子任务' : '折叠子任务') + '" title="' + (collapsedIds[String(itemId)] ? '展开子任务' : '折叠子任务') + '">' + (collapsedIds[String(itemId)] ? '&#9656;' : '&#9662;') + '</button>';
-            if (!isArchived) {
-                html += '<button class="todo-action-btn child" onclick="window._todo.addChild(' + actionId + ')" aria-label="新建子任务" title="新建子任务">&#8627;</button>';
-                if (parentIdOf(todo)) html += '<button class="todo-action-btn" onclick="window._todo.outdent(' + actionId + ')" aria-label="提升层级" title="提升层级">&#8676;</button>';
-                if (previous) html += '<button class="todo-action-btn" onclick="window._todo.indent(' + actionId + ')" aria-label="降低层级" title="降低层级">&#8677;</button>';
-            }
-            if (isArchived) html += '<button class="todo-action-btn restore" onclick="window._todo.restore(' + actionId + ')" aria-label="恢复到列表" title="恢复到列表">&#8635;</button>';
-            else {
-                if (todo.completed != 1) html += '<button class="todo-action-btn pomodoro" onclick="window._todo.startPomodoro(' + actionId + ')" aria-label="番茄钟" title="番茄钟">&#9654;</button>';
-                html += '<button class="todo-action-btn" onclick="window._todo.startEdit(' + actionId + ')" aria-label="编辑" title="编辑">&#9998;</button><button class="todo-action-btn archive" onclick="window._todo.archive(' + actionId + ')" aria-label="归档" title="归档">&#128451;</button>';
-            }
-            html += '<button class="todo-action-btn delete" onclick="window._todo.deleteTodo(' + actionId + ')" aria-label="删除" title="删除">&#128465;</button></div>';
-        }
+        if (!isEditing) html += renderTaskActions(todo, actionId, hasChildTasks, previousSibling(todo), isArchived);
         if (!isEditing && !focusMode && !isArchived) {
             html += '<div class="todo-parent-drop-zone" data-parent-drop-id="' + escapeAttribute(itemId) + '">放到这里，成为此任务的子任务</div>';
         }
@@ -1002,7 +1034,7 @@
         if (editingId == todo.id) {
             return '<div class="todo-child-node" style="--todo-child-depth:' + depth + ';"><div class="todo-child-editing">' + renderTaskCard(todo, depth, false) + '</div></div>';
         }
-        var actionId = /^\d+$/.test(String(todo.id)) ? String(todo.id) : "'" + escapeAttribute(todo.id) + "'";
+        var actionId = todoActionId(todo.id);
         var blocked = isBlocked(todo);
         var deps = dependencyNames(todo);
         var isArchived = todo.archived == 1;
@@ -1010,7 +1042,7 @@
         var canDrag = sortingEnabled();
         var html = '<div class="todo-child-node" style="--todo-child-depth:' + depth + ';"><div class="todo-child-card' + (todo.completed == 1 ? ' completed' : '') + (blocked ? ' blocked' : '') + '" data-id="' + escapeAttribute(todo.id) + '" data-parent-id="' + parentIdOf(todo) + '" draggable="' + canDrag + '">';
         html += '<div class="todo-priority-bar ' + priorityCss(getEffectivePriority(todo)) + '"></div>';
-        html += '<div class="todo-checkbox' + (isArchived ? ' disabled' : '') + '" role="checkbox" aria-checked="' + (todo.completed == 1 ? 'true' : 'false') + '"' + (isArchived ? ' aria-disabled="true"' : ' tabindex="0" onclick="window._todo.toggle(' + actionId + ')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();window._todo.toggle(' + actionId + ')}"') + '></div>';
+        html += renderTaskCheckbox(todo, actionId);
         html += '<div class="todo-child-content"><div class="todo-child-title">' + escapeHtml(todo.title) + '</div>';
         if (todo.notes) html += '<div class="todo-child-notes">' + escapeHtml(todo.notes) + '</div>';
         html += '<div class="todo-child-meta">';
@@ -1059,9 +1091,10 @@
         var children = childPreview(todo);
         var nextChild = nextAvailableChild(todo);
         var visibleChildren = children.slice(0, 3);
-        var cardClass = visibleChildren.length ? ' has-children' : ' single-task';
+        var cardClass = visibleChildren.length ? 'has-children' : 'single-task';
+        if (String(todo.notes || '').trim()) cardClass += ' has-notes';
         var span = taskLayoutSpan(todo);
-        var html = '<div class="todo-main-card todo-span-' + span + cardClass + '" data-layout-span="' + span + '">' + renderTaskCard(todo, 0, false);
+        var html = '<div class="todo-main-card todo-span-' + span + ' ' + cardClass + '" data-layout-span="' + span + '" data-child-count="' + children.length + '">' + renderTaskCard(todo, 0, false);
         if (visibleChildren.length) {
             html += '<div class="todo-child-list">' + visibleChildren.map(function (child) {
                 return renderChildCard(child, nextChild && sameId(nextChild.id, child.id), 1);
