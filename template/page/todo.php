@@ -66,7 +66,15 @@ get_header();
                             </label>
                             <label class="todo-add-field todo-add-dependencies-field" for="todo-dependencies">
                                 <span>前置任务（可多选）</span>
-                                <select id="todo-dependencies" class="todo-add-select todo-dependencies-select" title="先添加其他任务后再选择前置任务" multiple size="2"></select>
+                                <div class="todo-task-picker" data-picker-for="todo-dependencies">
+                                    <div class="todo-task-picker-toolbar">
+                                        <span class="todo-task-picker-hint">点击任务卡片选择前置任务</span>
+                                        <span id="todo-dependencies-count" class="todo-task-picker-count">未选择</span>
+                                    </div>
+                                    <input id="todo-dependencies-search" class="todo-task-picker-search" type="search" placeholder="搜索任务名称或编号" autocomplete="off">
+                                    <div id="todo-dependencies-options" class="todo-task-picker-options" role="listbox" aria-label="前置任务选项" aria-multiselectable="true"></div>
+                                    <select id="todo-dependencies" class="todo-add-select todo-dependencies-select" title="先添加其他任务后再选择前置任务" multiple size="2" tabindex="-1" aria-hidden="true"></select>
+                                </div>
                             </label>
                             <label class="todo-add-field todo-add-notes" for="todo-notes">
                                 <span>备注</span>

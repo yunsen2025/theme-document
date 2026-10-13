@@ -137,6 +137,159 @@
     padding: 4px 8px;
 }
 
+/* 前置任务选择器：保留原生 select 作为表单数据源，界面使用可搜索任务卡片。 */
+.todo-task-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid #d8e0eb;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.72);
+}
+
+.todo-task-picker-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: #718096;
+    font-size: var(--theme-text-more-mini-2, 0.62rem);
+}
+
+.todo-task-picker-count {
+    flex: 0 0 auto;
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: #edf7f2;
+    color: #2f8a68;
+    font-weight: 700;
+}
+
+.todo-task-picker-search {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 34px;
+    padding: 7px 10px;
+    border: 1px solid #d8e0eb;
+    border-radius: 7px;
+    background: #fff;
+    color: var(--theme-text-color, #333);
+    font: inherit;
+    font-size: var(--theme-text-more-mini, 0.7rem);
+    outline: none;
+}
+
+.todo-task-picker-search:focus {
+    border-color: var(--theme-color, #4a90d9);
+    box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.1);
+}
+
+.todo-task-picker-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 7px;
+    max-height: 182px;
+    overflow-y: auto;
+    padding: 2px;
+}
+
+.todo-task-picker-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+    padding: 9px 10px;
+    border: 1px solid #dce6f1;
+    border-radius: 8px;
+    background: #fff;
+    color: var(--theme-text-color, #333);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.16s, background 0.16s, box-shadow 0.16s, transform 0.16s;
+}
+
+.todo-task-picker-option:hover,
+.todo-task-picker-option:focus-visible {
+    border-color: #9bb9d8;
+    box-shadow: 0 3px 10px rgba(55, 76, 105, 0.1);
+    transform: translateY(-1px);
+    outline: none;
+}
+
+.todo-task-picker-option.selected {
+    border-color: #63b58f;
+    background: #effaf5;
+    box-shadow: inset 3px 0 0 #42a979;
+}
+
+.todo-task-picker-check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 18px;
+    width: 18px;
+    height: 18px;
+    border: 1px solid #cbd7e5;
+    border-radius: 5px;
+    color: transparent;
+    font-size: 0.72rem;
+    line-height: 1;
+}
+
+.todo-task-picker-option.selected .todo-task-picker-check {
+    border-color: #42a979;
+    background: #42a979;
+    color: #fff;
+    font-size: 0.72rem;
+}
+
+.todo-task-picker-copy {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 3px;
+}
+
+.todo-task-picker-copy strong {
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: var(--theme-text-more-mini, 0.7rem);
+    line-height: 1.35;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow-wrap: anywhere;
+}
+
+.todo-task-picker-copy small {
+    overflow: hidden;
+    color: #8190a3;
+    font-size: var(--theme-text-more-mini-2, 0.58rem);
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.todo-task-picker-empty {
+    padding: 14px 8px;
+    color: #8a99ac;
+    font-size: var(--theme-text-more-mini, 0.7rem);
+    text-align: center;
+}
+
+.todo-task-picker > .todo-dependencies-select {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 .todo-add-select:focus,
 .todo-add-date:focus {
     border-color: var(--theme-color, #4a90d9);

@@ -369,9 +369,72 @@
         var select = document.getElementById('todo-parent');
         if (select) select.innerHTML = parentOptions('', pendingParentId);
     }
+    function updateDependencyPickerSelection() {
+        var select = document.getElementById('todo-dependencies');
+        var options = document.getElementById('todo-dependencies-options');
+        var count = document.getElementById('todo-dependencies-count');
+        if (!select || !options) return;
+        var selected = {};
+        Array.from(select.selectedOptions).forEach(function (option) { selected[String(option.value)] = true; });
+        options.querySelectorAll('.todo-task-picker-option').forEach(function (button) {
+            var isSelected = !!selected[String(button.dataset.value)];
+            button.classList.toggle('selected', isSelected);
+            button.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+        });
+        if (count) count.textContent = Object.keys(selected).length ? Object.keys(selected).length + ' 个已选择' : '未选择';
+    }
+    function filterDependencyPicker() {
+        var input = document.getElementById('todo-dependencies-search');
+        var query = input ? input.value.trim().toLowerCase() : '';
+        document.querySelectorAll('#todo-dependencies-options .todo-task-picker-option').forEach(function (button) {
+            button.hidden = !!query && button.dataset.search.indexOf(query) === -1;
+        });
+    }
+    function bindDependencyPicker() {
+        var input = document.getElementById('todo-dependencies-search');
+        if (input && !input.dataset.bound) {
+            input.dataset.bound = 'true';
+            input.addEventListener('input', filterDependencyPicker);
+        }
+    }
+    function renderDependencyPicker() {
+        var select = document.getElementById('todo-dependencies');
+        var options = document.getElementById('todo-dependencies-options');
+        if (!select || !options) return;
+        var oldQuery = document.getElementById('todo-dependencies-search');
+        var query = oldQuery ? oldQuery.value : '';
+        var html = '';
+        Array.from(select.options).forEach(function (option) {
+            if (!option.value) return;
+            var text = option.textContent.trim();
+            var match = text.match(/^(.*)\s·\s#([^\s]+)\s·\s(.*)$/);
+            var title = match ? match[1] : text;
+            var meta = match ? '#' + match[2] + ' · ' + match[3] : '前置任务';
+            var search = text.toLowerCase();
+            html += '<button type="button" class="todo-task-picker-option" role="option" data-value="' + escapeAttribute(option.value) + '" data-search="' + escapeAttribute(search) + '" aria-selected="false">' +
+                '<span class="todo-task-picker-check" aria-hidden="true">✓</span><span class="todo-task-picker-copy"><strong>' + escapeHtml(title) + '</strong><small>' + escapeHtml(meta) + '</small></span></button>';
+        });
+        options.innerHTML = html || '<div class="todo-task-picker-empty">暂时没有可作为前置的任务</div>';
+        options.querySelectorAll('.todo-task-picker-option').forEach(function (button) {
+            button.addEventListener('click', function () {
+                var target = Array.from(select.options).find(function (option) { return String(option.value) === String(button.dataset.value); });
+                if (!target) return;
+                target.selected = !target.selected;
+                pendingDependencies = Array.from(select.selectedOptions).map(function (option) { return option.value; });
+                updateDependencyPickerSelection();
+            });
+        });
+        bindDependencyPicker();
+        updateDependencyPickerSelection();
+        if (oldQuery) oldQuery.value = query;
+        filterDependencyPicker();
+    }
     function populateDependenciesSelect() {
         var select = document.getElementById('todo-dependencies');
-        if (select) select.innerHTML = dependencyOptions('', pendingDependencies);
+        if (select) {
+            select.innerHTML = dependencyOptions('', pendingDependencies);
+            renderDependencyPicker();
+        }
     }
     function setNewParent(id) {
         pendingParentId = id ? String(id) : '';
