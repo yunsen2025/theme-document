@@ -186,6 +186,54 @@
     box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.1);
 }
 
+.todo-task-picker-selected {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.todo-task-picker-chip,
+.todo-task-picker-clear {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 5px 8px;
+    border: 1px solid #b9dccb;
+    border-radius: 7px;
+    background: #effaf5;
+    color: #26785f;
+    font: inherit;
+    font-size: var(--theme-text-more-mini-2, 0.62rem);
+    cursor: pointer;
+}
+
+.todo-task-picker-chip span:first-child {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.todo-task-picker-chip span:last-child {
+    font-size: 0.9rem;
+    line-height: 1;
+}
+
+.todo-task-picker-chip:hover,
+.todo-task-picker-clear:hover {
+    border-color: #63b58f;
+    background: #e1f5eb;
+}
+
+.todo-task-picker-clear {
+    border-color: #d8e0eb;
+    background: #fff;
+    color: #718096;
+}
+
 .todo-task-picker-options {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));

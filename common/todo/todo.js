@@ -375,6 +375,7 @@
         var select = document.getElementById('todo-dependencies');
         var options = document.getElementById('todo-dependencies-options');
         var count = document.getElementById('todo-dependencies-count');
+        var selectedBox = document.getElementById('todo-dependencies-selected');
         if (!select || !options) return;
         var selected = {};
         Array.from(select.selectedOptions).forEach(function (option) { selected[String(option.value)] = true; });
@@ -384,6 +385,28 @@
             button.setAttribute('aria-selected', isSelected ? 'true' : 'false');
         });
         if (count) count.textContent = Object.keys(selected).length ? Object.keys(selected).length + ' 个已选择' : '未选择';
+        if (selectedBox) {
+            var selectedOptions = Array.from(select.selectedOptions);
+            selectedBox.innerHTML = selectedOptions.length ? selectedOptions.map(function (option) {
+                return '<button type="button" class="todo-task-picker-chip" data-value="' + escapeAttribute(option.value) + '" title="移除前置任务">' +
+                    '<span>' + escapeHtml(option.textContent.trim().replace(/\s·\s#.*$/, '')) + '</span><span aria-hidden="true">×</span></button>';
+            }).join('') + '<button type="button" class="todo-task-picker-clear">清空</button>' : '';
+            selectedBox.querySelectorAll('.todo-task-picker-chip').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    var target = Array.from(select.options).find(function (option) { return String(option.value) === String(button.dataset.value); });
+                    if (!target) return;
+                    target.selected = false;
+                    pendingDependencies = Array.from(select.selectedOptions).map(function (option) { return option.value; });
+                    updateDependencyPickerSelection();
+                });
+            });
+            var clearButton = selectedBox.querySelector('.todo-task-picker-clear');
+            if (clearButton) clearButton.addEventListener('click', function () {
+                Array.from(select.options).forEach(function (option) { option.selected = false; });
+                pendingDependencies = [];
+                updateDependencyPickerSelection();
+            });
+        }
     }
     function filterDependencyPicker() {
         var input = document.getElementById('todo-dependencies-search');

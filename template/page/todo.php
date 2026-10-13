@@ -72,6 +72,7 @@ get_header();
                                         <span id="todo-dependencies-count" class="todo-task-picker-count">未选择</span>
                                     </div>
                                     <input id="todo-dependencies-search" class="todo-task-picker-search" type="search" placeholder="搜索任务名称或编号" autocomplete="off">
+                                    <div id="todo-dependencies-selected" class="todo-task-picker-selected" aria-live="polite"></div>
                                     <div id="todo-dependencies-options" class="todo-task-picker-options" role="listbox" aria-label="前置任务选项" aria-multiselectable="true"></div>
                                     <select id="todo-dependencies" class="todo-add-select todo-dependencies-select" title="先添加其他任务后再选择前置任务" multiple size="2" tabindex="-1" aria-hidden="true"></select>
                                 </div>
