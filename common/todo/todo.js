@@ -207,6 +207,19 @@
         });
         return rows;
     }
+    function taskOptionRows() {
+        var candidates = todos.filter(function (todo) {
+            return todo.archived != 1 && String(todo.id).indexOf('temp_') !== 0;
+        });
+        if (!candidates.length) return [];
+
+        // Keep the hierarchy when legacy rows are consistent; otherwise do not
+        // let one malformed parent_id hide every valid task from the form.
+        var rows = [];
+        try { rows = treeRows(candidates, false); } catch (e) { rows = []; }
+        if (rows.length === candidates.length) return rows;
+        return candidates.map(function (todo) { return { todo: todo, depth: 0 }; });
+    }
     function descendantLeaves(todoId, source) {
         var result = [], seen = {};
         function visit(parentId) {
@@ -280,7 +293,7 @@
             excludeBranches(currentId);
         }
         var html = '<option value="">顶层任务</option>';
-        treeRows(todos.filter(function (todo) { return todo.archived != 1 && String(todo.id).indexOf('temp_') !== 0; }), false).forEach(function (row) {
+        taskOptionRows().forEach(function (row) {
             var id = String(row.todo.id);
             if (excluded[id]) return;
             html += '<option value="' + id + '"' + (sameId(id, selectedId) ? ' selected' : '') + '>' +
@@ -296,7 +309,7 @@
             descendantTasks(currentId, todos).forEach(function (task) { excluded[String(task.id)] = true; });
         }
         var html = '';
-        treeRows(todos.filter(function (todo) { return todo.archived != 1 && String(todo.id).indexOf('temp_') !== 0; }), false).forEach(function (row) {
+        taskOptionRows().forEach(function (row) {
             var id = String(row.todo.id);
             if (excluded[id]) return;
             html += '<option value="' + id + '"' + (selected.indexOf(id) !== -1 ? ' selected' : '') + '>' +
