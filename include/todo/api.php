@@ -438,6 +438,10 @@ function document_todo_update() {
 		$update['parent_id'] = $parent_id ?: null;
 		$format[]            = '%d';
 	}
+	if ( isset( $_POST['sort_order'] ) ) {
+		$update['sort_order'] = intval( $_POST['sort_order'] );
+		$format[]             = '%d';
+	}
 	if ( isset( $_POST['due_date'] ) ) {
 		$update['due_date'] = document_todo_parse_due_date( $_POST['due_date'], $due_date_valid );
 		if ( ! $due_date_valid ) {
@@ -471,6 +475,25 @@ function document_todo_update() {
 		if ( false === $wpdb->update( $table, $update, [ 'id' => $id ], $format, [ '%d' ] ) ) {
 			$wpdb->query( 'ROLLBACK' );
 			wp_send_json_error( '更新待办事项失败', 500 );
+		}
+	}
+	if ( isset( $archived ) && $archived ) {
+		$promoted_parent = ! empty( $task['parent_id'] ) ? absint( $task['parent_id'] ) : 0;
+		if ( $promoted_parent ) {
+			$promote_children = $wpdb->query( $wpdb->prepare(
+				"UPDATE $table SET parent_id = %d WHERE parent_id = %d",
+				$promoted_parent,
+				$id
+			) );
+		} else {
+			$promote_children = $wpdb->query( $wpdb->prepare(
+				"UPDATE $table SET parent_id = NULL WHERE parent_id = %d",
+				$id
+			) );
+		}
+		if ( false === $promote_children ) {
+			$wpdb->query( 'ROLLBACK' );
+			wp_send_json_error( '转移子任务失败', 500 );
 		}
 	}
 	if ( $dependencies_changed ) {

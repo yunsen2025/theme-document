@@ -84,7 +84,7 @@ get_header();
                         </div>
                         <button id="todo-reset-settings" class="todo-settings-reset" type="button">重置设置</button>
                     </details>
-                    <button id="todo-add-btn" class="todo-add-btn"><span aria-hidden="true">+</span> 添加</button>
+                    <button id="todo-add-btn" class="todo-add-btn" type="button" aria-live="polite"><span aria-hidden="true">+</span> 添加</button>
                 </div>
 
                 <!-- 番茄钟计时条容器（最多3个并行，一行展示） -->

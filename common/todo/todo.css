@@ -378,6 +378,13 @@
     transform: translateY(0);
 }
 
+.todo-add-btn:disabled {
+    cursor: wait;
+    opacity: 0.68;
+    transform: none;
+    box-shadow: none;
+}
+
 /* 工具栏：筛选 + 统计 */
 .todo-toolbar {
     display: flex;

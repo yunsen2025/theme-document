@@ -56,6 +56,21 @@
         return true;
     }
     function endMutation(id) { delete mutationBusy[String(id)]; }
+    function sortingEnabled() { return currentView === 'list' && currentFilter === 'all' && !searchQuery; }
+    function setCreateBusy(busy) {
+        var button = document.getElementById('todo-add-btn');
+        if (!button) return;
+        if (busy) {
+            if (!button.dataset.idleLabel) button.dataset.idleLabel = button.innerHTML;
+            button.disabled = true;
+            button.setAttribute('aria-busy', 'true');
+            button.innerHTML = '<span aria-hidden="true">…</span> 保存中';
+        } else {
+            button.disabled = false;
+            button.removeAttribute('aria-busy');
+            if (button.dataset.idleLabel) button.innerHTML = button.dataset.idleLabel;
+        }
+    }
 
     // Chart state
     let chartCanvas = null;
@@ -501,7 +516,7 @@
         todo.parent_id = parentId ? String(parentId) : null;
         todo.sort_order = -1;
         saveToLocal(); render();
-        ajax('todo_update', { id: todo.id, parent_id: parentId || '' }).then(function () {
+        ajax('todo_update', { id: todo.id, parent_id: parentId || '', sort_order: -1 }).then(function () {
             endMutation(todo.id); return syncFromServer(true).catch(function () { showMessage('层级已保存，但刷新任务列表失败。', 'error'); });
         }).catch(function (error) {
             endMutation(todo.id); restoreSnapshot(snapshot);
@@ -526,6 +541,7 @@
         if (!title) { showMessage('请先填写任务名称。', 'error'); input.focus(); return; }
         if (createBusy) return;
         createBusy = true;
+        setCreateBusy(true);
         var priority = document.getElementById('todo-priority').value;
         var dueDate = document.getElementById('todo-date').value;
         var importance = parseInt(document.getElementById('todo-importance').value) || 3;
@@ -548,6 +564,7 @@
         ajax('todo_create', { title: title, priority: priority, due_date: dueDate, importance: importance, parent_id: parentId, notes: notes, dependencies: JSON.stringify(dependencies) })
             .then(function (row) {
                 createBusy = false;
+                setCreateBusy(false);
                 var idx = todos.findIndex(function (t) { return t.id === tempId; });
                 if (idx !== -1) todos[idx] = row;
                 resetAdvancedSettings();
@@ -555,6 +572,7 @@
             })
             .catch(function (error) {
                 createBusy = false;
+                setCreateBusy(false);
                 todos = todos.filter(function (t) { return t.id !== tempId; });
                 pendingParentId = parentId || ''; pendingDependencies = dependencies.slice();
                 saveToLocal(); render();
@@ -587,8 +605,12 @@
         var todo = todos.find(function (t) { return t.id == id; });
         if (!todo || todo.archived == 1 || !beginMutation(id)) return;
         var snapshot = snapshotTodos();
+        var promotedParent = parentIdOf(todo);
         todo.archived = 1;
         todo.archived_at = new Date().toISOString().slice(0, 19).replace('T', ' ');
+        todos.forEach(function (child) {
+            if (sameId(child.parent_id, id)) child.parent_id = promotedParent || null;
+        });
         saveToLocal(); render();
         ajax('todo_update', { id: id, archived: 1 }).then(function () {
             endMutation(id); return syncFromServer(true).catch(function () { showMessage('归档已保存，但刷新任务列表失败。', 'error'); });
@@ -709,6 +731,10 @@
         return todos.find(function (todo) { return String(todo.id) === String(dragItem.dataset.id); }) || null;
     }
     function handleDragStart(e) {
+        if (!sortingEnabled()) {
+            e.preventDefault();
+            return;
+        }
         dragSnapshot = snapshotTodos();
         dragReparented = false;
         dragItem = e.currentTarget;
@@ -722,11 +748,11 @@
         if (e.target.closest('.todo-parent-drop-zone, .todo-root-drop-zone')) return;
         var target = e.target.closest('.todo-item, .todo-child-card');
         var isChildDrag = dragItem && dragItem.classList.contains('todo-child-card');
-        var dragContainer = isChildDrag ? dragItem : dragItem.closest('.todo-main-card');
-        var targetContainer = target && (isChildDrag ? target : target.closest('.todo-main-card'));
+        var dragContainer = isChildDrag ? dragItem.closest('.todo-child-node') : dragItem.closest('.todo-main-card');
+        var targetContainer = target && (isChildDrag ? target.closest('.todo-child-node') : target.closest('.todo-main-card'));
         var list = dragContainer && dragContainer.parentElement;
         if (target && target !== dragItem && target.dataset.parentId === dragItem.dataset.parentId && targetContainer && targetContainer.parentElement === list) {
-            var items = Array.from(list.children).filter(function (item) { return isChildDrag ? item.matches('.todo-child-card') : item.matches('.todo-main-card'); });
+            var items = Array.from(list.children).filter(function (item) { return isChildDrag ? item.matches('.todo-child-node') : item.matches('.todo-main-card'); });
             if (items.indexOf(dragContainer) < items.indexOf(targetContainer)) list.insertBefore(dragContainer, targetContainer.nextSibling);
             else list.insertBefore(dragContainer, targetContainer);
         }
@@ -912,9 +938,10 @@
         var previous = previousSibling(todo);
         var itemId = todo.id;
         var actionId = /^\d+$/.test(String(itemId)) ? String(itemId) : "'" + escapeAttribute(itemId) + "'";
-        var html = '<div class="todo-item todo-tree-item' + (isEditing ? ' editing' : '') + (todo.completed == 1 ? ' completed' : '') + (isArchived ? ' archived' : '') + (collapsedIds[String(itemId)] ? ' collapsed' : '') + (isPomodoring(itemId) ? ' pomodoro-active' : '') + '" data-id="' + itemId + '" data-parent-id="' + parentIdOf(todo) + '" style="--todo-depth:' + (depth || 0) + ';" draggable="' + (!isEditing && !focusMode) + '">';
+        var canDrag = !isEditing && !focusMode && sortingEnabled();
+        var html = '<div class="todo-item todo-tree-item' + (isEditing ? ' editing' : '') + (todo.completed == 1 ? ' completed' : '') + (isArchived ? ' archived' : '') + (collapsedIds[String(itemId)] ? ' collapsed' : '') + (isPomodoring(itemId) ? ' pomodoro-active' : '') + '" data-id="' + itemId + '" data-parent-id="' + parentIdOf(todo) + '" style="--todo-depth:' + (depth || 0) + ';" draggable="' + canDrag + '">';
         html += '<div class="todo-priority-bar ' + effCss + '"></div><div class="todo-body">';
-        html += '<div class="todo-checkbox' + (isArchived ? ' disabled' : '') + '"' + (isArchived ? '' : ' onclick="window._todo.toggle(' + actionId + ')"') + '></div>';
+        html += '<div class="todo-checkbox' + (isArchived ? ' disabled' : '') + '" role="checkbox" aria-checked="' + (todo.completed == 1 ? 'true' : 'false') + '"' + (isArchived ? ' aria-disabled="true"' : ' tabindex="0" onclick="window._todo.toggle(' + actionId + ')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();window._todo.toggle(' + actionId + ')}"') + '></div>';
         html += '<div class="todo-content">';
         if (isEditing) {
             html += '<input class="todo-title-input" id="edit-title-' + itemId + '" value="' + escapeAttribute(todo.title) + '" onkeydown="if(event.key===\'Enter\')window._todo.saveEdit(' + actionId + ');if(event.key===\'Escape\')window._todo.cancelEdit()">';
@@ -980,9 +1007,10 @@
         var deps = dependencyNames(todo);
         var isArchived = todo.archived == 1;
         var previous = previousSibling(todo);
-        var html = '<div class="todo-child-node" style="--todo-child-depth:' + depth + ';"><div class="todo-child-card' + (todo.completed == 1 ? ' completed' : '') + (blocked ? ' blocked' : '') + '" data-id="' + escapeAttribute(todo.id) + '" data-parent-id="' + parentIdOf(todo) + '" draggable="true">';
+        var canDrag = sortingEnabled();
+        var html = '<div class="todo-child-node" style="--todo-child-depth:' + depth + ';"><div class="todo-child-card' + (todo.completed == 1 ? ' completed' : '') + (blocked ? ' blocked' : '') + '" data-id="' + escapeAttribute(todo.id) + '" data-parent-id="' + parentIdOf(todo) + '" draggable="' + canDrag + '">';
         html += '<div class="todo-priority-bar ' + priorityCss(getEffectivePriority(todo)) + '"></div>';
-        html += '<div class="todo-checkbox' + (isArchived ? ' disabled' : '') + '"' + (isArchived ? '' : ' onclick="window._todo.toggle(' + actionId + ')"') + '></div>';
+        html += '<div class="todo-checkbox' + (isArchived ? ' disabled' : '') + '" role="checkbox" aria-checked="' + (todo.completed == 1 ? 'true' : 'false') + '"' + (isArchived ? ' aria-disabled="true"' : ' tabindex="0" onclick="window._todo.toggle(' + actionId + ')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();window._todo.toggle(' + actionId + ')}"') + '></div>';
         html += '<div class="todo-child-content"><div class="todo-child-title">' + escapeHtml(todo.title) + '</div>';
         if (todo.notes) html += '<div class="todo-child-notes">' + escapeHtml(todo.notes) + '</div>';
         html += '<div class="todo-child-meta">';
@@ -1019,7 +1047,7 @@
     }
 
     function taskLayoutSpan(todo) {
-        var descendants = descendantTasks(todo.id, todos).length;
+        var descendants = descendantTasks(todo.id, todos).filter(function (task) { return task.archived != 1; }).length;
         var notesLength = String(todo.notes || '').trim().length;
         if (descendants === 0) return 1;
         if (descendants >= 5 || notesLength >= 180) return 4;
