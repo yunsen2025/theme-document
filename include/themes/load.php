@@ -14,6 +14,19 @@ function nicen_theme_min_path( $file_path ) {
 	return $file_path;
 }
 
+/**
+ * Use the asset contents as the cache-busting version.
+ * ZIP uploads can preserve Git timestamps, so filemtime() alone may keep a
+ * CDN serving an older file after the theme has been updated.
+ */
+function nicen_theme_asset_version( $file_path ) {
+	if ( ! file_exists( $file_path ) ) {
+		return null;
+	}
+
+	return substr( md5_file( $file_path ), 0, 12 );
+}
+
 function nicen_theme_has_mermaid_content( $content ) {
 	if ( empty( $content ) ) {
 		return false;
@@ -249,7 +262,7 @@ function nicen_theme_load_source() {
 				 * */
 				if ( strpos( $style, 'http' ) === false ) {
 					$min_style = nicen_theme_min_path( $style );
-					$ver = filemtime( $root . $min_style );
+					$ver = nicen_theme_asset_version( $root . $min_style );
 					wp_enqueue_style( $key, $url . $min_style, array(), $ver );
 				} else {
 					wp_enqueue_style( $key, $style, array() );
@@ -268,7 +281,7 @@ function nicen_theme_load_source() {
 				 * */
 				if ( strpos( $script, 'http' ) === false ) {
 					$min_script = nicen_theme_min_path( $script );
-					$ver = filemtime( $root . $min_script );
+					$ver = nicen_theme_asset_version( $root . $min_script );
 					wp_enqueue_script( $key, $url . $min_script, array(), $ver, true );
 				} else {
 					wp_enqueue_script( $key, $script, array(), null, true );
