@@ -1080,10 +1080,8 @@
 
     function taskLayoutSpan(todo) {
         var descendants = descendantTasks(todo.id, todos).filter(function (task) { return task.archived != 1; }).length;
-        var notesLength = String(todo.notes || '').trim().length;
+        // 任务树固定占半行，让同一层的项目始终保持两列节奏。
         if (descendants === 0) return 1;
-        if (descendants >= 5 || notesLength >= 180) return 4;
-        if (descendants >= 3 || notesLength >= 80) return 3;
         return 2;
     }
 

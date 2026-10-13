@@ -626,7 +626,7 @@ body.todo-dragging .todo-root-drop-zone {
     font-size: var(--theme-text-mini, 0.76rem);
 }
 
-/* 任务卡片布局契约：普通任务紧凑，任务树按内容自然增长。 */
+/* 任务卡片布局契约：普通任务四列，任务树两列。 */
 .todo-main-card {
     display: flex;
     flex-direction: column;
@@ -640,16 +640,10 @@ body.todo-dragging .todo-root-drop-zone {
     box-shadow: 0 3px 12px rgba(55, 76, 105, 0.045);
 }
 
-.todo-main-card.todo-span-2 {
-    grid-column: span 2;
-}
-
-.todo-main-card.todo-span-3 {
-    grid-column: span 3;
-}
-
+.todo-main-card.todo-span-2,
+.todo-main-card.todo-span-3,
 .todo-main-card.todo-span-4 {
-    grid-column: 1 / -1;
+    grid-column: span 2;
 }
 
 .todo-main-card > .todo-item {
@@ -721,8 +715,8 @@ body.todo-dragging .todo-root-drop-zone {
 }
 
 .todo-child-list {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
     margin: -2px 0 8px 28px;
     padding: 6px 0 0 12px;
@@ -735,6 +729,10 @@ body.todo-dragging .todo-root-drop-zone {
     padding: 8px 0 2px 14px;
     border-left-width: 3px;
     border-left-color: #a9c6e6;
+}
+
+.todo-child-list > .todo-more-children {
+    grid-column: 1 / -1;
 }
 
 .todo-child-list-nested {
@@ -750,8 +748,8 @@ body.todo-dragging .todo-root-drop-zone {
 
 .todo-child-card {
     display: grid;
-    grid-template-columns: 4px 22px minmax(0, 1fr);
-    grid-template-rows: auto auto;
+    grid-template-columns: 4px 22px minmax(0, 1fr) auto;
+    grid-template-rows: auto;
     min-height: 68px;
     border: 1px solid var(--theme-border-color, #e8e8e8);
     border-radius: 6px;
@@ -774,14 +772,14 @@ body.todo-dragging .todo-root-drop-zone {
 .todo-child-card .todo-checkbox {
     width: 18px;
     height: 18px;
-    margin: 15px 2px;
+    margin: 12px 2px;
 }
 
 .todo-child-card .todo-child-content {
     grid-column: 3;
     grid-row: 1;
     min-width: 0;
-    padding: 10px 4px 8px 0;
+    padding: 9px 4px 9px 0;
 }
 
 .todo-child-title {
@@ -837,15 +835,20 @@ body.todo-dragging .todo-root-drop-zone {
     display: flex;
     align-items: center;
     gap: 2px;
-    grid-column: 3;
-    grid-row: 2;
-    justify-content: flex-start;
+    grid-column: 4;
+    grid-row: 1;
+    justify-content: flex-end;
+    align-self: center;
     min-width: 0;
-    padding: 2px 8px 6px 0;
+    padding: 0 8px 0 4px;
 }
 
 .todo-child-actions .todo-action-btn {
-    padding: 4px;
+    width: 26px;
+    min-width: 26px;
+    height: 26px;
+    min-height: 26px;
+    padding: 3px;
     font-size: 13px;
 }
 
@@ -1135,12 +1138,14 @@ body.todo-dragging .todo-root-drop-zone {
     grid-row: 2;
     justify-content: flex-end;
     display: flex;
-    gap: 4px;
+    width: fit-content;
+    margin-left: auto;
+    gap: 2px;
     flex-shrink: 0;
     opacity: 1;
     transition: opacity 0.2s;
-    padding: 6px 0 0;
-    border-top: 1px solid var(--theme-border-color, #e8e8e8);
+    padding: 0;
+    border-top: 0;
     align-items: center;
 }
 
@@ -2037,6 +2042,7 @@ body.todo-dragging .todo-root-drop-zone {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .todo-main-card.todo-span-2,
     .todo-main-card.todo-span-3,
     .todo-main-card.todo-span-4 {
         grid-column: 1 / -1;
@@ -2053,11 +2059,12 @@ body.todo-dragging .todo-root-drop-zone {
     }
 
     .todo-child-card {
-        grid-template-columns: 4px 20px minmax(0, 1fr);
+        grid-template-columns: 4px 20px minmax(0, 1fr) auto;
     }
 
     .todo-child-actions {
         padding-right: 6px;
+        padding-left: 2px;
     }
 
     .todo-stats {
@@ -2079,6 +2086,11 @@ body.todo-dragging .todo-root-drop-zone {
     .todo-main-card.todo-span-3,
     .todo-main-card.todo-span-4 {
         grid-column: 1;
+    }
+
+    .todo-main-card > .todo-child-list,
+    .todo-child-list-nested {
+        grid-template-columns: 1fr;
     }
 
     .todo-main-card.single-task > .todo-item {
