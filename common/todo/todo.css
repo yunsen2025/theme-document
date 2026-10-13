@@ -248,19 +248,21 @@
 /* 列表 */
 .todo-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(220px, 280px));
     gap: 12px;
     padding: 0;
     margin: 0;
     align-items: start;
+    justify-content: start;
 }
 
 /* 树视图：普通任务保持方块，有子任务的主卡片按内容自然增高。 */
 .todo-list.todo-tree-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(220px, 280px));
     gap: 12px;
     align-items: start;
+    justify-content: start;
 }
 
 .todo-tree-list .todo-tree-item {
@@ -1635,6 +1637,10 @@
 @media (max-width: 480px) {
     .todo-list {
         grid-template-columns: 1fr;
+    }
+
+    .todo-main-card.single-task > .todo-item {
+        aspect-ratio: 1 / 1;
     }
 
     .todo-add-settings {
