@@ -719,8 +719,13 @@
     function clearDragDropState() {
         document.body.classList.remove('todo-dragging');
         document.querySelectorAll('.todo-parent-drop-zone.active, .todo-root-drop-zone.active').forEach(function (zone) { zone.classList.remove('active'); });
+        document.querySelectorAll('.todo-reparent-target').forEach(function (card) { card.classList.remove('todo-reparent-target'); });
         if (dragItem) dragItem.classList.remove('dragging');
         dragDropTarget = null;
+    }
+    function clearCardReparentTarget() {
+        document.querySelectorAll('.todo-reparent-target').forEach(function (card) { card.classList.remove('todo-reparent-target'); });
+        if (dragDropTarget && dragDropTarget.kind === 'card') dragDropTarget = null;
     }
     function canDropOnParent(todoId, parentId) {
         if (!todoId || !parentId || String(todoId) === String(parentId)) return false;
@@ -747,6 +752,22 @@
         e.preventDefault();
         if (e.target.closest('.todo-parent-drop-zone, .todo-root-drop-zone')) return;
         var target = e.target.closest('.todo-item, .todo-child-card');
+        var dragged = findDraggedTodo();
+        if (!dragged || !target || target === dragItem || e.target.closest('.todo-action-btn, .todo-checkbox')) return;
+
+        // Card center is an explicit reparent target; the upper/lower edges
+        // remain available for reordering among siblings.
+        var rect = target.getBoundingClientRect();
+        var relativeY = (e.clientY - rect.top) / Math.max(rect.height, 1);
+        if (relativeY > 0.25 && relativeY < 0.75 && canDropOnParent(dragged.id, target.dataset.id)) {
+            e.stopPropagation();
+            clearCardReparentTarget();
+            target.classList.add('todo-reparent-target');
+            dragDropTarget = { kind: 'card', zone: target, parentId: target.dataset.id };
+            e.dataTransfer.dropEffect = 'move';
+            return;
+        }
+        clearCardReparentTarget();
         var isChildDrag = dragItem && dragItem.classList.contains('todo-child-card');
         var dragContainer = isChildDrag ? dragItem.closest('.todo-child-node') : dragItem.closest('.todo-main-card');
         var targetContainer = target && (isChildDrag ? target.closest('.todo-child-node') : target.closest('.todo-main-card'));
@@ -756,6 +777,16 @@
             if (items.indexOf(dragContainer) < items.indexOf(targetContainer)) list.insertBefore(dragContainer, targetContainer.nextSibling);
             else list.insertBefore(dragContainer, targetContainer);
         }
+    }
+    function handleCardDrop(e) {
+        var dragged = findDraggedTodo();
+        var target = e.currentTarget;
+        if (!dragged || !dragDropTarget || dragDropTarget.kind !== 'card' || dragDropTarget.zone !== target || !canDropOnParent(dragged.id, target.dataset.id)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        dragReparented = true;
+        clearDragDropState();
+        updateParent(dragged, target.dataset.id);
     }
     function handleParentDragOver(e) {
         var zone = e.currentTarget;
@@ -1117,6 +1148,7 @@
         listEl.querySelectorAll('.todo-item[draggable="true"], .todo-child-card[draggable="true"]').forEach(function (item) {
             item.addEventListener('dragstart', handleDragStart);
             item.addEventListener('dragover', handleDragOver);
+            item.addEventListener('drop', handleCardDrop);
             item.addEventListener('dragend', handleDragEnd);
         });
         listEl.querySelectorAll('.todo-parent-drop-zone').forEach(function (zone) {

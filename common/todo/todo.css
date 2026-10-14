@@ -561,6 +561,37 @@ body.todo-dragging .todo-root-drop-zone {
     transform: translateY(-1px);
 }
 
+/* Dropping over the card center reparents; card edges remain reorder targets. */
+.todo-item.todo-reparent-target,
+.todo-child-card.todo-reparent-target {
+    position: relative;
+    outline: 2px solid #42a979;
+    outline-offset: 2px;
+    box-shadow: 0 0 0 5px rgba(66, 169, 121, 0.16), 0 6px 18px rgba(66, 169, 121, 0.18);
+}
+
+.todo-item.todo-reparent-target::after,
+.todo-child-card.todo-reparent-target::after {
+    content: '放入此任务，成为子任务';
+    position: absolute;
+    z-index: 4;
+    top: 50%;
+    left: 50%;
+    max-width: calc(100% - 32px);
+    padding: 7px 12px;
+    border: 1px solid #9ed8bc;
+    border-radius: 999px;
+    background: rgba(239, 250, 245, 0.96);
+    color: #26785f;
+    font-size: var(--theme-text-more-mini, 0.7rem);
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    white-space: nowrap;
+}
+
 .todo-root-drop-zone {
     grid-column: 1 / -1;
     min-height: 42px;
