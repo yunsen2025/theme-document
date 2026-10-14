@@ -1006,44 +1006,50 @@
         var isArchived = todo.archived == 1;
         var previous = previousSibling(todo);
         var canDrag = sortingEnabled();
-        var html = '<div class="todo-child-node" style="--todo-child-depth:' + depth + ';"><div class="todo-child-card' + (todo.completed == 1 ? ' completed' : '') + (blocked ? ' blocked' : '') + '" data-id="' + escapeAttribute(todo.id) + '" data-parent-id="' + parentIdOf(todo) + '" draggable="' + canDrag + '">';
-        html += '<div class="todo-priority-bar ' + priorityCss(getEffectivePriority(todo)) + '"></div>';
-        html += renderTaskCheckbox(todo, actionId);
-        html += '<div class="todo-child-content"><div class="todo-child-title">' + escapeHtml(todo.title) + '</div>';
-        if (todo.notes) html += '<div class="todo-child-notes">' + escapeHtml(todo.notes) + '</div>';
-        html += '<div class="todo-child-meta">';
-        html += '<span class="todo-priority-tag ' + priorityCss(getEffectivePriority(todo)) + '">' + priorityLabel(getEffectivePriority(todo)) + '</span>';
-        if (isNext && todo.completed != 1) html += '<span class="todo-next-badge">下一步</span>';
-        if (blocked) html += '<span class="todo-blocked-tag">等待：' + escapeHtml(deps.join('、')) + '</span>';
-        if (todo.due_date) html += '<span>' + formatDate(todo.due_date) + '</span>';
-        html += '</div></div><div class="todo-child-actions">';
+        var parts = [
+            '<div class="todo-child-node" style="--todo-child-depth:' + depth + ';">',
+            '<div class="todo-child-card' + (todo.completed == 1 ? ' completed' : '') + (blocked ? ' blocked' : '') + '" data-id="' + escapeAttribute(todo.id) + '" data-parent-id="' + parentIdOf(todo) + '" draggable="' + canDrag + '">',
+            '<div class="todo-priority-bar ' + priorityCss(getEffectivePriority(todo)) + '"></div>',
+            renderTaskCheckbox(todo, actionId),
+            '<div class="todo-child-content"><div class="todo-child-title">' + escapeHtml(todo.title) + '</div>'
+        ];
+        if (todo.notes) parts.push('<div class="todo-child-notes">' + escapeHtml(todo.notes) + '</div>');
+        parts.push('<div class="todo-child-meta">');
+        parts.push('<span class="todo-priority-tag ' + priorityCss(getEffectivePriority(todo)) + '">' + priorityLabel(getEffectivePriority(todo)) + '</span>');
+        if (isNext && todo.completed != 1) parts.push('<span class="todo-next-badge">下一步</span>');
+        if (blocked) parts.push('<span class="todo-blocked-tag">等待：' + escapeHtml(deps.join('、')) + '</span>');
+        if (todo.due_date) parts.push('<span>' + formatDate(todo.due_date) + '</span>');
+        parts.push('</div></div>');
+        parts.push('<div class="todo-child-actions">');
         if (!isArchived) {
-            if (parentIdOf(todo)) html += '<button class="todo-action-btn" onclick="window._todo.outdent(' + actionId + ')" aria-label="提升层级" title="提升层级">&#8676;</button>';
-            if (previous) html += '<button class="todo-action-btn" onclick="window._todo.indent(' + actionId + ')" aria-label="降低层级" title="降低层级">&#8677;</button>';
-            html += '<button class="todo-action-btn" onclick="window._todo.addChild(' + actionId + ')" aria-label="新建子任务" title="新建子任务">&#8627;</button>';
-            html += '<button class="todo-action-btn" onclick="window._todo.startEdit(' + actionId + ')" aria-label="编辑" title="编辑">&#9998;</button>';
-            if (todo.completed != 1) html += '<button class="todo-action-btn" onclick="window._todo.startPomodoro(' + actionId + ')" aria-label="番茄钟" title="番茄钟">&#9654;</button>';
-            html += '<button class="todo-action-btn" onclick="window._todo.archive(' + actionId + ')" aria-label="归档" title="归档">&#128451;</button><button class="todo-action-btn" onclick="window._todo.deleteTodo(' + actionId + ')" aria-label="删除" title="删除">&#128465;</button>';
+            if (parentIdOf(todo)) parts.push('<button class="todo-action-btn" onclick="window._todo.outdent(' + actionId + ')" aria-label="提升层级" title="提升层级">&#8676;</button>');
+            if (previous) parts.push('<button class="todo-action-btn" onclick="window._todo.indent(' + actionId + ')" aria-label="降低层级" title="降低层级">&#8677;</button>');
+            parts.push('<button class="todo-action-btn" onclick="window._todo.addChild(' + actionId + ')" aria-label="新建子任务" title="新建子任务">&#8627;</button>');
+            parts.push('<button class="todo-action-btn" onclick="window._todo.startEdit(' + actionId + ')" aria-label="编辑" title="编辑">&#9998;</button>');
+            if (todo.completed != 1) parts.push('<button class="todo-action-btn" onclick="window._todo.startPomodoro(' + actionId + ')" aria-label="番茄钟" title="番茄钟">&#9654;</button>');
+            parts.push('<button class="todo-action-btn" onclick="window._todo.archive(' + actionId + ')" aria-label="归档" title="归档">&#128451;</button><button class="todo-action-btn" onclick="window._todo.deleteTodo(' + actionId + ')" aria-label="删除" title="删除">&#128465;</button>');
         }
-        html += '</div>';
+        parts.push('</div>');
         var children = childPreview(todo);
         if (children.length) {
             var nextChild = nextAvailableChild(todo);
             var visibleChildren = children.slice(0, 3);
-            html += '<div class="todo-child-list todo-child-list-nested">' + visibleChildren.map(function (child) {
+            parts.push('<div class="todo-child-list todo-child-list-nested">');
+            parts.push(visibleChildren.map(function (child) {
                 return renderChildCard(child, nextChild && sameId(nextChild.id, child.id), depth + 1);
-            }).join('');
+            }).join(''));
             if (children.length > visibleChildren.length) {
-                html += '<div class="todo-more-children">还有 ' + (children.length - visibleChildren.length) + ' 个子任务</div>';
+                parts.push('<div class="todo-more-children">还有 ' + (children.length - visibleChildren.length) + ' 个子任务</div>');
             }
-            html += '</div>';
+            parts.push('</div>');
         }
         if (!isArchived) {
-            html += '<div class="todo-parent-drop-zone" data-parent-drop-id="' + escapeAttribute(todo.id) + '">放到这里，成为子任务</div>';
+            parts.push('<div class="todo-parent-drop-zone" data-parent-drop-id="' + escapeAttribute(todo.id) + '">放到这里，成为子任务</div>');
         }
-        // Close both the child card and its wrapper. Leaving the wrapper open
-        // makes following root cards become DOM children of the first tree.
-        return html + '</div></div>';
+        // Close the card before its tree-node wrapper so later root cards stay siblings.
+        parts.push('</div>'); // .todo-child-card
+        parts.push('</div>'); // .todo-child-node
+        return parts.join('');
     }
 
     function taskLayoutSpan(todo) {
@@ -1060,17 +1066,22 @@
         var cardClass = visibleChildren.length ? 'has-children' : 'single-task';
         if (String(todo.notes || '').trim()) cardClass += ' has-notes';
         var span = taskLayoutSpan(todo);
-        var html = '<div class="todo-main-card todo-span-' + span + ' ' + cardClass + '" data-layout-span="' + span + '" data-child-count="' + children.length + '">' + renderTaskCard(todo, 0, false);
+        var parts = [
+            '<div class="todo-main-card todo-span-' + span + ' ' + cardClass + '" data-layout-span="' + span + '" data-child-count="' + children.length + '">',
+            renderTaskCard(todo, 0, false)
+        ];
         if (visibleChildren.length) {
-            html += '<div class="todo-child-list">' + visibleChildren.map(function (child) {
+            parts.push('<div class="todo-child-list">');
+            parts.push(visibleChildren.map(function (child) {
                 return renderChildCard(child, nextChild && sameId(nextChild.id, child.id), 1);
-            }).join('');
+            }).join(''));
             if (children.length > visibleChildren.length) {
-                html += '<div class="todo-more-children">还有 ' + (children.length - visibleChildren.length) + ' 个子任务，完成当前步骤后继续展开</div>';
+                parts.push('<div class="todo-more-children">还有 ' + (children.length - visibleChildren.length) + ' 个子任务，完成当前步骤后继续展开</div>');
             }
-            html += '</div>';
+            parts.push('</div>'); // .todo-child-list
         }
-        return html + '</div>';
+        parts.push('</div>'); // .todo-main-card
+        return parts.join('');
     }
 
     function rootHasFilterMatch(root) {
