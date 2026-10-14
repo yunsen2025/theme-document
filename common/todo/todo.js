@@ -1075,7 +1075,9 @@
         if (!isArchived) {
             html += '<div class="todo-parent-drop-zone" data-parent-drop-id="' + escapeAttribute(todo.id) + '">放到这里，成为子任务</div>';
         }
-        return html + '</div>';
+        // Close both the child card and its wrapper. Leaving the wrapper open
+        // makes following root cards become DOM children of the first tree.
+        return html + '</div></div>';
     }
 
     function taskLayoutSpan(todo) {
