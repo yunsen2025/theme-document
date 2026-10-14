@@ -16,6 +16,7 @@ const jsFiles = [
   'common/swiper/swiper.js',
   'common/friend/friend.js',
   'common/widget/widget.js',
+  'common/todo/todo-tree.js',
   'common/todo/todo.js',
   'common/clipboard/clipboard.js',
   'common/clipboard/clipboard-listener.js',

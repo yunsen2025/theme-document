@@ -1037,7 +1037,11 @@ const PAGES = [
 				'/common/todo/todo.css'
 			],
 			'scripts' => [
-				'/common/todo/todo.js'
+				'todo-tree' => '/common/todo/todo-tree.js',
+				'todo-app'  => [
+					'src'  => '/common/todo/todo.js',
+					'deps' => [ 'todo-tree' ]
+				]
 			]
 		]
 	],

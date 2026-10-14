@@ -203,11 +203,12 @@
     }
 
     /* ========== 任务树 ========== */
-    function sameId(a, b) { return String(a) === String(b); }
-    function parentIdOf(todo) { return todo && todo.parent_id ? String(todo.parent_id) : ''; }
-    function dependencyIdsOf(todo) {
-        return Array.isArray(todo && todo.dependencies) ? todo.dependencies.map(String) : [];
-    }
+    var TaskTree = window.DocumentTodoTree;
+    if (!TaskTree) throw new Error('DocumentTodoTree must load before todo.js');
+    var sameId = TaskTree.sameId;
+    var parentIdOf = TaskTree.parentIdOf;
+    var dependencyIdsOf = TaskTree.dependencyIdsOf;
+    function childrenOf(parentId, source) { return TaskTree.childrenOf(parentId, source || todos); }
     function dependenciesOf(todo) {
         return dependencyIdsOf(todo).map(function (id) {
             return todos.find(function (item) { return sameId(item.id, id); });
@@ -223,15 +224,6 @@
             return dependency.title;
         });
     }
-    function childrenOf(parentId, source) {
-        var key = parentId ? String(parentId) : '';
-        return (source || todos).filter(function (todo) {
-            return parentIdOf(todo) === key;
-        }).sort(function (a, b) {
-            var order = (parseInt(a.sort_order) || 0) - (parseInt(b.sort_order) || 0);
-            return order || String(b.created_at || '').localeCompare(String(a.created_at || '')) || Number(b.id) - Number(a.id);
-        });
-    }
     function childPriority(todo) {
         if (todo.completed == 1) return -1;
         return isBlocked(todo) ? 1 : 0;
@@ -244,28 +236,7 @@
     function nextAvailableChild(todo) {
         return childPreview(todo).find(function (child) { return child.completed != 1 && !isBlocked(child); }) || null;
     }
-    function treeRows(source, respectCollapsed) {
-        var rows = [], used = {};
-        source = source || todos;
-        function visit(parentId, depth) {
-            childrenOf(parentId, source).forEach(function (todo) {
-                var key = String(todo.id);
-                if (used[key]) return;
-                used[key] = true;
-                rows.push({ todo: todo, depth: depth });
-                if (!respectCollapsed || !collapsedIds[key]) visit(key, depth + 1);
-            });
-        }
-        visit('', 0);
-        source.forEach(function (todo) {
-            if (!used[String(todo.id)]) {
-                used[String(todo.id)] = true;
-                rows.push({ todo: todo, depth: 0 });
-                if (!respectCollapsed || !collapsedIds[String(todo.id)]) visit(String(todo.id), 1);
-            }
-        });
-        return rows;
-    }
+    function treeRows(source, respectCollapsed) { return TaskTree.treeRows(source || todos, respectCollapsed, collapsedIds); }
     function taskOptionRows() {
         var candidates = todos.filter(function (todo) {
             return todo.archived != 1 && String(todo.id).indexOf('temp_') !== 0;
@@ -279,35 +250,8 @@
         if (rows.length === candidates.length) return rows;
         return candidates.map(function (todo) { return { todo: todo, depth: 0 }; });
     }
-    function descendantLeaves(todoId, source) {
-        var result = [], seen = {};
-        function visit(parentId) {
-            childrenOf(parentId, source).forEach(function (child) {
-                var key = String(child.id);
-                if (seen[key]) return;
-                seen[key] = true;
-                var children = childrenOf(child.id, source);
-                if (children.length) visit(child.id);
-                else result.push(child);
-            });
-        }
-        visit(todoId);
-        return result;
-    }
-    function descendantTasks(todoId, source) {
-        var result = [], seen = {};
-        function visit(parentId) {
-            childrenOf(parentId, source).forEach(function (child) {
-                var key = String(child.id);
-                if (seen[key]) return;
-                seen[key] = true;
-                result.push(child);
-                visit(child.id);
-            });
-        }
-        visit(todoId);
-        return result;
-    }
+    function descendantLeaves(todoId, source) { return TaskTree.descendantLeaves(todoId, source || todos); }
+    function descendantTasks(todoId, source) { return TaskTree.descendantTasks(todoId, source || todos); }
     function treeProgress(todo) {
         var leaves = descendantLeaves(todo.id, todos);
         if (!leaves.length) return null;
@@ -328,16 +272,7 @@
         var index = siblings.findIndex(function (item) { return sameId(item.id, todo.id); });
         return index > 0 ? siblings[index - 1] : null;
     }
-    function breadcrumb(todo) {
-        var parts = [], current = todo, seen = {};
-        while (current && !seen[String(current.id)]) {
-            seen[String(current.id)] = true;
-            parts.unshift(current.title);
-            current = todos.find(function (item) { return sameId(item.id, current.parent_id); });
-        }
-        parts.pop();
-        return parts.length ? parts.join(' / ') : '';
-    }
+    function breadcrumb(todo) { return TaskTree.breadcrumb(todo, todos); }
     function taskOptionLabel(todo, depth) {
         var path = breadcrumb(todo);
         var status = todo.completed == 1 ? '已完成' : (isBlocked(todo) ? '等待前置' : '可执行');

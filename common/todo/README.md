@@ -10,8 +10,9 @@
 
 ```
 template/page/todo.php      # WordPress 页面模板（91 行）
-common/todo/todo.js          # 前端核心逻辑（~1092 行）
-common/todo/todo.css          # 样式（~972 行）
+common/todo/todo.js          # 页面状态、CRUD、视图与交互（~2117 行）
+common/todo/todo-tree.js     # 纯任务层级计算与树遍历
+common/todo/todo.css          # 样式（~2317 行）
 include/config.php            # 主题配置（注册资源）
 ```
 

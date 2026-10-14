@@ -274,7 +274,13 @@ function nicen_theme_load_source() {
 		 * 是否有脚本依赖
 		 * */
 		if ( isset( $value['dependent']['scripts'] ) ) {
-			foreach ( $value['dependent']['scripts'] as $script ) {
+			foreach ( $value['dependent']['scripts'] as $script_key => $script ) {
+				$handle = is_string( $script_key ) ? sanitize_key( $script_key ) : $key;
+				$dependencies = array();
+				if ( is_array( $script ) ) {
+					$dependencies = array_map( 'sanitize_key', $script['deps'] ?? array() );
+					$script = $script['src'] ?? '';
+				}
 
 				/*
 				 * 如果不是外部文件
@@ -282,9 +288,9 @@ function nicen_theme_load_source() {
 				if ( strpos( $script, 'http' ) === false ) {
 					$min_script = nicen_theme_min_path( $script );
 					$ver = nicen_theme_asset_version( $root . $min_script );
-					wp_enqueue_script( $key, $url . $min_script, array(), $ver, true );
+					wp_enqueue_script( $handle, $url . $min_script, $dependencies, $ver, true );
 				} else {
-					wp_enqueue_script( $key, $script, array(), null, true );
+					wp_enqueue_script( $handle, $script, $dependencies, null, true );
 				}
 			}
 		}
