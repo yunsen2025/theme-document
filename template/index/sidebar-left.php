@@ -16,10 +16,10 @@ if ( nicen_theme_showCatelog() ) {
 
 		?>
         <div id="space">
-            <aside class="main-left" id="navigator">
+            <aside class="main-left" id="navigator" aria-label="Table of contents" data-reader-ignore="true">
                 <div class="main-top">
                     <ul>
-                        <li class="active">🗂️ 文章目录</li>
+                        <li class="active">🗂️ Table of Contents</li>
                         <!-- <li>修改记录</li>-->
                     </ul>
                     <i class="iconfont icon-daohang-caidan"></i>
@@ -32,14 +32,10 @@ if ( nicen_theme_showCatelog() ) {
                     </ul>
                 </div>
 
-                <div class="icp-beian">
-                    <div>
+                <div class="icp-beian" aria-hidden="true" data-nosnippet>
+                    <div role="button" tabindex="-1">
                         <span class="number"><?php echo nicen_theme_getPostNice( get_the_ID() ); ?></span>
-                        <img src="<?php echo get_template_directory_uri(); ?>/assets/images/zan.svg" title="点赞"/>
-                    </div>
-                    <div>
-                        <span class="number"><?php echo nicen_theme_getPostBad( get_the_ID() ); ?></span>
-                        <img src="<?php echo get_template_directory_uri(); ?>/assets/images/cai.svg" title="踩"/>
+                        <span class="like-icon" aria-hidden="true"></span>
                     </div>
                 </div>
             </aside>

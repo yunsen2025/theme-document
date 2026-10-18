@@ -1,7 +1,7 @@
 <?php
 
 /*
- * @author 友人a丶
+ * @author 友人a丶 Haibin
  * @date 2022-08-14
  * 主题前台设置
  * 主题后台设置
@@ -39,7 +39,7 @@
 /*
  * 主题版本
  * */
-const DOCUMENT_VERSION = "1.2.9";
+const DOCUMENT_VERSION = "1.9";
 
 const ADMIN = [
 	/*菜单设置*/
@@ -318,6 +318,88 @@ const ADMIN = [
 						'title'    => '账号密码',
 						'callback' => 'nicen_theme_form_password',
 					],
+					[
+						'id'       => 'H1_title',
+						'title'    => '文章通知',
+						'callback' => 'nicen_theme_form_title',
+						'args'     => []
+					],
+					[
+						'id'       => 'document_post_notify_mode',
+						'title'    => '文章通知模式',
+						'callback' => 'nicen_theme_form_select',
+						'args'     => [
+							'options' => [
+								[
+									'label' => '关闭',
+									'value' => 'off'
+								],
+								[
+									'label' => '仅发布新文章',
+									'value' => 'publish'
+								],
+								[
+									'label' => '发布新文章和更新文章',
+									'value' => 'publish_update'
+								]
+							],
+							'tip'     => '仅对正式发布的文章生效，自动保存和修订版不会发送。'
+						]
+					],
+					[
+						'id'       => 'document_post_notify_recipients',
+						'title'    => '文章通知收件人',
+						'callback' => 'nicen_theme_form_textarea',
+						'args'     => [
+							'tip' => '多个邮箱可以用换行、逗号或分号分隔。'
+						]
+					],
+					[
+						'id'       => 'document_post_notify_from_email',
+						'title'    => '文章通知发件邮箱',
+						'callback' => 'nicen_theme_form_input',
+						'args'     => [
+							'tip' => '建议与 SMTP 邮件账号保持一致，否则部分邮箱服务可能拒收。'
+						]
+					],
+					[
+						'id'       => 'document_email_subscribe_open',
+						'title'    => '显示读者邮箱订阅入口',
+						'callback' => 'nicen_theme_form_switch',
+						'args'     => [
+							'tip' => '读者提交后需要在后台“邮件订阅”页面批准，批准后才会收到文章通知。'
+						]
+					],
+				]
+			],
+			[
+				"id"     => "document_theme_antispam",
+				'title'  => '评论反垃圾',
+				'fields' => [
+					[
+						'id'       => 'document_comment_blocked_keywords',
+						'title'    => '评论关键词/网址黑名单',
+						'callback' => 'nicen_theme_form_textarea',
+						'args'     => [
+							'tip' => '每行填写一个关键词、句子或网址片段；命中后评论会进入垃圾评论。'
+						]
+					],
+					[
+						'id'       => 'document_comment_blocked_ips',
+						'title'    => '评论 IP 黑名单',
+						'callback' => 'nicen_theme_form_textarea',
+						'args'     => [
+							'tip' => '每行填写一个完整 IP；命中后评论会进入垃圾评论。'
+						]
+					],
+					[
+						'id'       => 'document_comment_blocked_emails',
+						'title'    => '评论邮箱黑名单',
+						'callback' => 'nicen_theme_form_textarea',
+						'args'     => [
+							'tip' => '每行填写一个完整邮箱地址；命中后评论会进入垃圾评论。'
+						]
+					],
 				]
 			],
 			[
@@ -386,6 +468,14 @@ const ADMIN = [
 									'value' => '0'
 								]
 							]
+						]
+					],
+					[
+						'id'       => 'document_home_posts_per_page',
+						'title'    => '首页每页文章数量',
+						'callback' => 'nicen_theme_form_number',
+						'args'     => [
+							'tip' => '建议设置为 15 或 20，允许范围为 1–50'
 						]
 					],
 					[
@@ -521,6 +611,30 @@ const ADMIN = [
 						'id'       => 'document_show_copyright',
 						'title'    => '显示底部版权信息',
 						'callback' => 'nicen_theme_form_switch',
+					],
+					[
+						'id'       => 'document_show_citation',
+						'title'    => '显示文章引用信息',
+						'callback' => 'nicen_theme_form_switch',
+						'args'     => [
+							'tip' => '自动生成普通引用和 BibTeX'
+						]
+					],
+					[
+						'id'       => 'document_citation_author',
+						'title'    => '引用作者名称',
+						'callback' => 'nicen_theme_form_input',
+						'args'     => [
+							'tip' => '普通引用和 BibTeX 共用此署名；留空时使用文章作者的显示名称'
+						]
+					],
+					[
+						'id'       => 'document_single_show_sparkline',
+						'title'    => '显示文章阅读趋势',
+						'callback' => 'nicen_theme_form_switch',
+						'args'     => [
+							'tip' => '在文章底部显示近30天阅读走势迷你图'
+						]
 					],
 					[
 						'id'       => 'document_copyright',
@@ -750,6 +864,7 @@ define( "CONFIG", [
 	"document_no_display"              => '',
 	"document_paginate_auto_load_else" => 1,
 	"document_pagination"              => 1,
+	"document_home_posts_per_page"     => 20,
 	//显示分页的类型，默认动态分页
 	'document_index_excerpt_number'    => 200,
 	//文章摘要字数
@@ -775,6 +890,8 @@ define( "CONFIG", [
 	"document_show_donate"        => 1,
 	"document_donate_url"         => site_url(),
 	"document_copyright"          => "赠人玫瑰，手有余香",
+	"document_show_citation"      => 1,
+	"document_citation_author"    => "Haibin Lai",
 
 	"document_smtp_open"     => 0,
 	//是否开启smtp
@@ -788,6 +905,20 @@ define( "CONFIG", [
 	//邮件账户
 	"document_smtp_password" => '',
 	//邮件密码
+	"document_post_notify_mode"       => 'off',
+	//文章通知模式：off / publish / publish_update
+	"document_post_notify_recipients" => '',
+	//文章通知收件人
+	"document_post_notify_from_email" => '12211612@mail.sustech.edu.cn',
+	//文章通知发件邮箱
+	"document_email_subscribe_open"   => 1,
+	//读者邮箱订阅入口
+	"document_comment_blocked_keywords" => "Thanks for sharing. I read many of your blog posts, cool, your blog is very good.",
+	//评论关键词/网址黑名单，每行一个
+	"document_comment_blocked_ips"      => '',
+	//评论 IP 黑名单，每行一个
+	"document_comment_blocked_emails"   => '',
+	//评论邮箱黑名单，每行一个
 
 	'document_footer_bg_color'   => 'transparent',
 	'document_footer_font_color' => '#262626',
@@ -815,6 +946,7 @@ define( "CONFIG", [
 	'document_single_show_bread'     => 1,
 	'document_single_show_structrue' => 1,
 	'document_single_show_catalog'   => 0,
+	'document_single_show_sparkline' => 0,
 	'document_assiciate_type'        => 1,
 	/*
 	 * 页面设置
@@ -865,6 +997,17 @@ const PAGES = [
 			]
 		]
 	],
+	'生活碎片' => [
+		'template'  => 'template/page/fragments.php',
+		'dependent' => [
+			'styles' => [
+				'/common/fragments/fragments.css'
+			],
+			'scripts' => [
+				'/common/fragments/fragments.js'
+			]
+		]
+	],
 	'友情链接' => [
 		'template'  => 'template/page/friend.php', //模板文件
 		'dependent' => [
@@ -883,5 +1026,78 @@ const PAGES = [
 	],
 	'留言板'   => [
 		'template' => 'template/page/board.php',
+	],
+	'My Corner'   => [
+		'template'  => 'template/page/toys.php',
+	],
+	'待办事项' => [
+		'template'  => 'template/page/todo.php',
+		'dependent' => [
+			'styles'  => [
+				'/common/todo/todo.css'
+			],
+			'scripts' => [
+				'todo-tree' => '/common/todo/todo-tree.js',
+				'todo-app'  => [
+					'src'  => '/common/todo/todo.js',
+					'deps' => [ 'todo-tree' ]
+				]
+			]
+		]
+	],
+	'Clipboard' => [
+		'template'  => 'template/page/clipboard.php',
+		'dependent' => [
+			'styles'  => [
+				'/common/clipboard/clipboard.css'
+			],
+			'scripts' => [
+				'/common/clipboard/clipboard.js'
+			]
+		]
+	],
+	'Snake Game' => [
+		'template'  => 'template/page/snake.php',
+		'dependent' => [
+			'styles'  => [
+				'/common/snake/snake.css'
+			],
+			'scripts' => [
+				'/common/snake/snake.js'
+			]
+		]
+	],
+	'Doom FPS' => [
+		'template'  => 'template/page/doom.php',
+		'dependent' => [
+			'styles'  => [
+				'/common/doom/doom.css'
+			],
+			'scripts' => [
+				'/common/doom/doom.js'
+			]
+		]
+	],
+	'阅读统计' => [
+		'template'  => 'template/page/stats.php',
+		'dependent' => [
+			'styles'  => [
+				'/common/stats/stats.css'
+			],
+			'scripts' => [
+				'/common/stats/stats.js'
+			]
+		]
+	],
+	'阅读趋势' => [
+		'template'  => 'template/page/trend.php',
+		'dependent' => [
+			'styles'  => [
+				'/common/trend/trend.css'
+			],
+			'scripts' => [
+				'/common/trend/trend.js'
+			]
+		]
 	]
 ];

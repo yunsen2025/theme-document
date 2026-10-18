@@ -1,0 +1,444 @@
+(function (root) {
+    'use strict';
+
+    function trimFormulaLines(lines) {
+        var result = lines.slice();
+
+        while (result.length && result[0].trim() === '') {
+            result.shift();
+        }
+        while (result.length && result[result.length - 1].trim() === '') {
+            result.pop();
+        }
+
+        return result.map(function (line) {
+            return line.replace(/[ \t]+$/, '');
+        });
+    }
+
+    function looksLikeFormula(lines) {
+        var value = lines.join('\n').trim();
+
+        if (!value || value.length > 10000) {
+            return false;
+        }
+
+        if (/\\[A-Za-z]+|[_^{}=]|\d\s*(?:[+*/-]|\\times|\\cdot)\s*\d/.test(value)) {
+            return true;
+        }
+
+        // A simple function such as f(x) is also a valid display formula.
+        if (/\b[A-Za-z][A-Za-z0-9]*\s*\(\s*[A-Za-z0-9_,\s+*/-]+\s*\)/.test(value)) {
+            return true;
+        }
+
+        var permutation = value.replace(/\s*\n\s*/g, ' ');
+        return /^(?:\(\s*\d+(?:(?:\\\s+|\s+|,\s*)\d+)*\s*\)\s*)+$/.test(permutation);
+    }
+
+    function katexBlock(lines) {
+        return ['```katex'].concat(trimFormulaLines(lines), ['```']);
+    }
+
+    function normalizeChatFormula(lines) {
+        return trimFormulaLines(lines).map(function (line) {
+            var normalized = line.replace(/\\\\(?=[A-Za-z]+)/g, '\\');
+
+            normalized = normalized.replace(/\*(\\(?:sum|prod|bigcup|bigcap|lim|max|min))\*\s*\{/g, '$1_{');
+            normalized = normalized.replace(/\*(\\[A-Za-z]+)\*/g, '$1');
+            normalized = normalized.replace(/([A-Za-z])\*([^*\n]*?)([|}\]]+)\*/g, '$1_$2$3');
+            normalized = normalized.replace(/([A-Za-z])\*([A-Za-z0-9]+)\*/g, '$1_$2');
+
+            return normalized;
+        });
+    }
+
+    function normalizeFormulaLines(lines) {
+        return normalizeChatFormula(lines).map(function (line) {
+            // Strip Markdown-only wrappers that can appear inside a pasted formula.
+            var normalized = line.replace(/([A-Za-z][A-Za-z0-9]*)\s*`?\$([^$]+)\$`?/g, '$1($2)');
+            normalized = normalized.replace(/[`$]/g, '');
+
+            // Markdown may escape an underscore that should be a LaTeX subscript.
+            return normalized.replace(/\\+_/g, '_');
+        });
+    }
+
+    function bracketMarker(line) {
+        var marker = line.trim();
+
+        marker = marker.replace(/^#{1,6}[ \t]+/, '').trim();
+        var emphasized = marker.match(/^(?:\*\*|__)(.*)(?:\*\*|__)$/);
+
+        if (emphasized) {
+            marker = emphasized[1].trim();
+        }
+
+        if (marker === '[' || marker === '\\[') {
+            return 'open';
+        }
+        if (marker === ']' || marker === '\\]') {
+            return 'close';
+        }
+
+        return '';
+    }
+
+    function oneLineBracketFormula(line) {
+        var value = line.trim();
+        var match = value.match(/^\[\s*([\s\S]*?)\s*\]$/);
+
+        if (!match) {
+            match = value.match(/^\\\[\s*([\s\S]*?)\s*\\\]$/);
+        }
+
+        if (!match || !looksLikeFormula([match[1]])) {
+            return null;
+        }
+
+        return normalizeFormulaLines([match[1]]);
+    }
+
+    function inlineBracketBoundary(line, boundary) {
+        var value = line.trim();
+        var pattern = boundary === 'open'
+            ? /^\\\[\s*(.*)$/
+            : /^(.*?)\s*\\\]$/;
+        var match = value.match(pattern);
+
+        return match ? match[1] : null;
+    }
+
+    function isWholeTableCell(content, start, end) {
+        var before = content.slice(0, start).replace(/\s+$/, '');
+        var after = content.slice(end + 1).replace(/^\s+/, '');
+
+        return before.charAt(before.length - 1) === '|' && (after === '' || after.charAt(0) === '|');
+    }
+
+    function looksLikeInlineFormula(inner, content, start, end) {
+        var value = inner.trim();
+
+        if (/\\[A-Za-z]+|[_^{}]/.test(value)) {
+            return true;
+        }
+
+        return isWholeTableCell(content, start, end) && /^\d+(?:\s*,\s*\d+)*$/.test(value);
+    }
+
+    function inlineMathCode(formula) {
+        return '`$' + formula.trim() + '$`';
+    }
+
+    function placeholderFor(value, protectedCode) {
+        var placeholder = '\u0000CODE' + protectedCode.length + '\u0000';
+        protectedCode.push(value);
+        return placeholder;
+    }
+
+    function findMarkdownClosing(text, start, open, close) {
+        var depth = 1;
+        var index = start + 1;
+
+        while (index < text.length) {
+            if (text[index] === '\\') {
+                index += 2;
+                continue;
+            }
+            if (text[index] === open) {
+                depth += 1;
+            } else if (text[index] === close) {
+                depth -= 1;
+                if (depth === 0) {
+                    return index;
+                }
+            }
+            index += 1;
+        }
+
+        return -1;
+    }
+
+    function protectMarkdownLinks(content, protectedCode) {
+        var output = '';
+        var cursor = 0;
+
+        while (cursor < content.length) {
+            var start = content.indexOf('[', cursor);
+            var imageStart = false;
+
+            if (start > 0 && content[start - 1] === '!') {
+                imageStart = true;
+                start -= 1;
+            }
+
+            if (start === -1) {
+                output += content.slice(cursor);
+                break;
+            }
+
+            var bracketStart = imageStart ? start + 1 : start;
+            var bracketEnd = findMarkdownClosing(content, bracketStart, '[', ']');
+
+            if (bracketEnd === -1 || content[bracketEnd + 1] !== '(') {
+                output += content.slice(cursor, bracketStart + 1);
+                cursor = bracketStart + 1;
+                continue;
+            }
+
+            var parenEnd = findMarkdownClosing(content, bracketEnd + 1, '(', ')');
+
+            if (parenEnd === -1) {
+                output += content.slice(cursor, bracketStart + 1);
+                cursor = bracketStart + 1;
+                continue;
+            }
+
+            output += content.slice(cursor, start);
+            output += placeholderFor(content.slice(start, parenEnd + 1), protectedCode);
+            cursor = parenEnd + 1;
+        }
+
+        return output;
+    }
+
+    function protectBareUrls(content, protectedCode) {
+        return content.replace(/https?:\/\/[^\s<>()]+(?:\([^\s<>()]*\)[^\s<>()]*)*/g, function (url) {
+            return placeholderFor(url, protectedCode);
+        });
+    }
+
+    function convertInlineMath(line) {
+        var protectedCode = [];
+        var count = 0;
+        var content = line.replace(/`+[^`]*`+/g, function (code) {
+            return placeholderFor(code, protectedCode);
+        });
+
+        content = protectMarkdownLinks(content, protectedCode);
+        content = protectBareUrls(content, protectedCode);
+
+        content = content.replace(/\\\((.*?)\\\)/g, function (match, formula) {
+            count += 1;
+            return placeholderFor(inlineMathCode(formula), protectedCode);
+        });
+
+        var output = '';
+        var cursor = 0;
+
+        while (cursor < content.length) {
+            var start = content.indexOf('(', cursor);
+            if (start === -1 || (start > 0 && content[start - 1] === '\\')) {
+                output += content.slice(cursor);
+                break;
+            }
+
+            output += content.slice(cursor, start);
+            var depth = 0;
+            var end = start;
+
+            for (; end < content.length; end += 1) {
+                if (content[end] === '(' && (end === 0 || content[end - 1] !== '\\')) {
+                    depth += 1;
+                } else if (content[end] === ')' && (end === 0 || content[end - 1] !== '\\')) {
+                    depth -= 1;
+                    if (depth === 0) {
+                        break;
+                    }
+                }
+            }
+
+            if (depth !== 0) {
+                output += content.slice(start);
+                cursor = content.length;
+                break;
+            }
+
+            var inner = content.slice(start + 1, end);
+            if (looksLikeInlineFormula(inner, content, start, end)) {
+                output += inlineMathCode(inner);
+                count += 1;
+            } else {
+                output += content.slice(start, end + 1);
+            }
+            cursor = end + 1;
+        }
+
+        output = output.replace(/\u0000CODE(\d+)\u0000/g, function (match, codeIndex) {
+            return protectedCode[Number(codeIndex)];
+        });
+
+        return { content: output, count: count };
+    }
+
+    function isFence(line) {
+        var match = line.match(/^\s*(`{3,}|~{3,})/);
+        return match ? match[1].charAt(0) : '';
+    }
+
+    function convertMarkdown(source) {
+        var newline = source.indexOf('\r\n') !== -1 ? '\r\n' : '\n';
+        var lines = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+        var output = [];
+        var stats = { dollarBlocks: 0, bracketBlocks: 0, singleLineBlocks: 0, inlineExpressions: 0 };
+        var fence = '';
+        var index = 0;
+
+        while (index < lines.length) {
+            var line = lines[index];
+            var fenceMarker = isFence(line);
+
+            if (fenceMarker) {
+                if (!fence) {
+                    fence = fenceMarker;
+                } else if (fence === fenceMarker) {
+                    fence = '';
+                }
+                output.push(line);
+                index += 1;
+                continue;
+            }
+
+            if (fence) {
+                output.push(line);
+                index += 1;
+                continue;
+            }
+
+            if (/^\s*\$\$\s*$/.test(line)) {
+                var dollarEnd = index + 1;
+                while (dollarEnd < lines.length && !/^\s*\$\$\s*$/.test(lines[dollarEnd])) {
+                    dollarEnd += 1;
+                }
+
+                if (dollarEnd < lines.length) {
+                    output = output.concat(katexBlock(lines.slice(index + 1, dollarEnd)));
+                    stats.dollarBlocks += 1;
+                    index = dollarEnd + 1;
+                    continue;
+                }
+            }
+
+            var singleLine = line.match(/^\s*\$\$\s*(.+?)\s*\$\$\s*$/);
+            if (singleLine) {
+                output = output.concat(katexBlock([singleLine[1]]));
+                stats.singleLineBlocks += 1;
+                index += 1;
+                continue;
+            }
+
+            var oneLineBracket = oneLineBracketFormula(line);
+            if (oneLineBracket) {
+                output = output.concat(katexBlock(oneLineBracket));
+                stats.bracketBlocks += 1;
+                index += 1;
+                continue;
+            }
+
+            var inlineBracketStart = inlineBracketBoundary(line, 'open');
+            if (inlineBracketStart !== null && bracketMarker(line) !== 'open') {
+                var inlineBracketEnd = index + 1;
+                while (inlineBracketEnd < lines.length && inlineBracketBoundary(lines[inlineBracketEnd], 'close') === null) {
+                    inlineBracketEnd += 1;
+                }
+
+                if (inlineBracketEnd < lines.length) {
+                    var inlineBracketLines = [inlineBracketStart]
+                        .concat(lines.slice(index + 1, inlineBracketEnd))
+                        .concat([inlineBracketBoundary(lines[inlineBracketEnd], 'close')]);
+
+                    if (looksLikeFormula(inlineBracketLines)) {
+                        output = output.concat(katexBlock(normalizeFormulaLines(inlineBracketLines)));
+                        stats.bracketBlocks += 1;
+                        index = inlineBracketEnd + 1;
+                        continue;
+                    }
+                }
+            }
+
+            if (bracketMarker(line) === 'open') {
+                var bracketEnd = index + 1;
+                while (bracketEnd < lines.length && bracketMarker(lines[bracketEnd]) !== 'close') {
+                    bracketEnd += 1;
+                }
+
+                var bracketLines = lines.slice(index + 1, bracketEnd);
+                if (bracketEnd < lines.length && looksLikeFormula(bracketLines)) {
+                    output = output.concat(katexBlock(normalizeFormulaLines(bracketLines)));
+                    stats.bracketBlocks += 1;
+                    index = bracketEnd + 1;
+                    continue;
+                }
+            }
+
+            var inline = convertInlineMath(line);
+            output.push(inline.content);
+            stats.inlineExpressions += inline.count;
+            index += 1;
+        }
+
+        return {
+            content: output.join(newline),
+            stats: stats
+        };
+    }
+
+    if (typeof module === 'object' && module.exports) {
+        module.exports = { convertMarkdown: convertMarkdown };
+    }
+
+    if (!root.document) {
+        return;
+    }
+
+    function initialize() {
+        var source = root.document.getElementById('document-math-source');
+        var result = root.document.getElementById('document-math-result');
+        var convert = root.document.getElementById('document-math-convert');
+        var copy = root.document.getElementById('document-math-copy');
+        var clear = root.document.getElementById('document-math-clear');
+        var status = root.document.getElementById('document-math-status');
+
+        if (!source || !result || !convert || !copy || !clear || !status) {
+            return;
+        }
+
+        convert.addEventListener('click', function () {
+            var converted = convertMarkdown(source.value);
+            var total = converted.stats.dollarBlocks + converted.stats.bracketBlocks + converted.stats.singleLineBlocks + converted.stats.inlineExpressions;
+
+            result.value = converted.content;
+            copy.disabled = !result.value;
+            status.textContent = total ? '已转换 ' + total + ' 处公式' : '未找到可转换的公式块';
+        });
+
+        copy.addEventListener('click', function () {
+            var finish = function () {
+                status.textContent = '已复制转换结果';
+            };
+            var fallbackCopy = function () {
+                result.removeAttribute('readonly');
+                result.select();
+                root.document.execCommand('copy');
+                result.setAttribute('readonly', 'readonly');
+                finish();
+            };
+
+            if (root.navigator.clipboard && root.navigator.clipboard.writeText) {
+                root.navigator.clipboard.writeText(result.value).then(finish).catch(fallbackCopy);
+            } else {
+                fallbackCopy();
+            }
+        });
+
+        clear.addEventListener('click', function () {
+            source.value = '';
+            result.value = '';
+            copy.disabled = true;
+            status.textContent = '';
+            source.focus();
+        });
+    }
+
+    root.document.addEventListener('DOMContentLoaded', initialize);
+})(typeof window !== 'undefined' ? window : globalThis);

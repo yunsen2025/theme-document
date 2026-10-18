@@ -7,8 +7,24 @@
 ?>
 <!DOCTYPE html>
 <html lang="zh-cn" xmlns="http://www.w3.org/1999/html" class="personal">
+<meta name="theme-color" content="#ffffff"/>
+<script>
+(function(){
+  try {
+    var d = document.documentElement;
+    var night = localStorage.getItem('night');
+    var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (night === '1' || (night === null && prefersDark)) {
+      d.classList.add('dark');
+      d.classList.remove('personal');
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', '#141414');
+    }
+  } catch(e) {}
+})();
+</script>
+<style>.dark,.dark body{background-color:#333;color:rgba(255,255,255,0.87)}.dark .main-header{background:#141414}.dark .main-header,.dark .main-header a,.dark .main-header .menu-item,.dark .main-header .iconfont,.dark .main-header input{color:rgba(255,255,255,0.87)}</style>
 <head>
-    <meta name="theme-color" content="#ffffff"/>
     <meta charset="<?php bloginfo( 'charset' ); ?>"/>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 	<?php

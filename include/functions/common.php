@@ -67,6 +67,14 @@ function nicen_theme_setPostViews( $postID ) {
 		$count ++;
 		update_post_meta( $postID, $count_key, $count );
 	}
+
+	global $wpdb;
+	$log_table = $wpdb->prefix . 'document_view_logs';
+	$wpdb->query( $wpdb->prepare(
+		"INSERT INTO $log_table (post_id, view_date, view_count) VALUES (%d, %s, 1)
+		 ON DUPLICATE KEY UPDATE view_count = view_count + 1",
+		$postID, current_time( 'Y-m-d' )
+	) );
 }
 
 
@@ -1050,6 +1058,92 @@ function get_copyright() {
 }
 
 
+/*
+ * 生成文章的普通引用和 BibTeX 引用。
+ * */
+function nicen_theme_escape_bibtex_value( $value ) {
+	return strtr( (string) $value, [
+		'\\' => '\\textbackslash{}',
+		'{'  => '\\{',
+		'}'  => '\\}',
+		'&'  => '\\&',
+		'%'  => '\\%',
+		'$'  => '\\$',
+		'#'  => '\\#',
+		'_'  => '\\_',
+		'^'  => '\\textasciicircum{}',
+		'~'  => '\\textasciitilde{}',
+	] );
+}
+
+
+function nicen_theme_get_post_citation( $post_id = 0 ) {
+	$post = get_post( $post_id ?: get_the_ID() );
+
+	if ( ! $post ) {
+		return [];
+	}
+
+	$title     = html_entity_decode( wp_strip_all_tags( get_the_title( $post ) ), ENT_QUOTES, get_bloginfo( 'charset' ) );
+	$author    = trim( (string) nicen_theme_config( 'document_citation_author', false ) );
+	$author    = $author ?: get_the_author_meta( 'display_name', $post->post_author );
+	$author_id = get_the_author_meta( 'user_nicename', $post->post_author );
+	$url       = get_permalink( $post );
+	$date      = get_post_time( 'M. j, Y', false, $post );
+	$year      = get_post_time( 'Y', false, $post );
+	$month     = get_post_time( 'M', false, $post );
+	$key       = sanitize_title( $author_id ) ?: 'blog';
+	$key      .= '-' . $post->ID;
+	$bib_title  = nicen_theme_escape_bibtex_value( $title );
+	$bib_author = nicen_theme_escape_bibtex_value( $author );
+
+	$plain = sprintf(
+		'%s. (%s). 《%s》[Blog post]. Retrieved from %s',
+		$author,
+		$date,
+		$title,
+		$url
+	);
+
+	$bibtex = sprintf(
+		"@online{%s,\n        title={%s},\n        author={%s},\n        year={%s},\n        month={%s},\n        url={\\url{%s}},\n}",
+		$key,
+		$bib_title,
+		$bib_author,
+		$year,
+		$month,
+		$url
+	);
+
+	return [
+		'plain'  => $plain,
+		'bibtex' => $bibtex,
+		'author' => $author,
+		'date'   => $date,
+		'title'  => $title,
+		'url'    => $url,
+	];
+}
+
+
+/*
+ * 历史文章没有存储过该字段，默认显示；生活碎片始终不显示。
+ * */
+function nicen_theme_should_show_post_citation( $post_id = 0 ) {
+	$post = get_post( $post_id ?: get_the_ID() );
+
+	if ( ! $post || 'post' !== $post->post_type || ! nicen_theme_config( 'document_show_citation', false ) ) {
+		return false;
+	}
+
+	if ( has_category( [ 'fragments', 'life-fragments' ], $post ) ) {
+		return false;
+	}
+
+	return '0' !== get_post_meta( $post->ID, 'nicen_show_citation', true );
+}
+
+
 /**
  * 获取修改时间
  */
@@ -1064,4 +1158,55 @@ function get_new_post_modified_time( $format ) {
 		return get_post_modified_time( $format );
 	}
 
+}
+
+
+/**
+ * 获取文章字数统计
+ * @param int $postID 文章ID，默认为当前文章
+ * @param string $type 统计类型：'words' 总词数（默认，中文字符数+英文单词数），'chars' 字符数
+ * @return int 字数
+ */
+function nicen_theme_getPostWordCount( $postID = null, $type = 'words' ) {
+	
+	if ( $postID === null ) {
+		global $post;
+		$postID = $post->ID;
+	}
+	
+	$content = get_post_field( 'post_content', $postID );
+	
+	// 先去除链接标签（避免统计链接中的文本和URL）
+	$content = preg_replace( '/<a\s+[^>]*>.*?<\/a>/is', '', $content );
+	
+	// 去除其他HTML标签和短代码
+	$content = strip_tags( $content );
+	$content = preg_replace( "/\[[\s\S]*?]/", "", $content );
+	
+	// 去除URL（http://、https://、www. 开头的链接）
+	$content = preg_replace( '/https?:\/\/[^\s]+/i', '', $content );
+	$content = preg_replace( '/www\.[^\s]+/i', '', $content );
+	
+	// 去除邮箱地址
+	$content = preg_replace( '/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/', '', $content );
+	
+	if ( $type === 'chars' ) {
+		// 字符数模式
+		return mb_strlen( $content, 'UTF-8' );
+	} else {
+		// 总词数模式（默认）：中文字符数 + 英文单词数
+		
+		// 统计中文字符数
+		preg_match_all( '/[\x{4e00}-\x{9fa5}]/u', $content, $chinese_matches );
+		$chinese_count = count( $chinese_matches[0] );
+		
+		// 统计英文单词数
+		$english_content = preg_replace( '/[\x{4e00}-\x{9fa5}]/u', ' ', $content ); // 将中文替换为空格
+		$english_content = preg_replace( '/[^\w\s]/u', ' ', $english_content ); // 去除标点，保留字母数字和空格
+		$english_content = preg_replace( '/\s+/', ' ', trim( $english_content ) ); // 规范化空格
+		$english_words = !empty( trim( $english_content ) ) ? count( explode( ' ', $english_content ) ) : 0;
+		
+		// 总词数 = 中文字符数 + 英文单词数
+		return $chinese_count + $english_words;
+	}
 }

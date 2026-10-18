@@ -12,4 +12,18 @@ include_once get_template_directory() . '/include/themes/load.php'; //加载外�
 include_once get_template_directory() . '/include/themes/shortcode.php'; //短标签
 include_once get_template_directory() . '/include/themes/emoji.php'; //其它
 include_once get_template_directory() . '/include/themes/extra.php'; //其它
+include_once get_template_directory() . '/include/themes/sw.php'; //Service Worker
+include_once get_template_directory() . '/include/themes/rss.php'; //RSS 订阅优化
+include_once get_template_directory() . '/include/themes/image-size.php'; //Obsidian 图片尺寸语法 ![alt|200](url)
+include_once get_template_directory() . '/include/themes/markdown.php'; //HTML折叠区域中的Markdown兼容
+include_once get_template_directory() . '/include/todo/install.php'; //待办事项-数据库
+include_once get_template_directory() . '/include/todo/api.php'; //待办事项-接口
+include_once get_template_directory() . '/include/clipboard/install.php'; //剪贴板-数据库
+include_once get_template_directory() . '/include/clipboard/api.php'; //剪贴板-接口
+include_once get_template_directory() . '/include/snake/install.php'; //贪吃蛇-数据库
+include_once get_template_directory() . '/include/snake/api.php'; //贪吃蛇-接口
+include_once get_template_directory() . '/include/doom/install.php'; //Doom-数据库
+include_once get_template_directory() . '/include/doom/api.php'; //Doom-接口
+include_once get_template_directory() . '/include/stats/install.php'; //阅读统计-数据库
+include_once get_template_directory() . '/include/stats/api.php'; //阅读统计-接口
 

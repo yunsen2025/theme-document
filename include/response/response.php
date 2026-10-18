@@ -32,7 +32,7 @@ function nicen_theme_auth() {
  * 点赞
  * */
 if ( isset( $_GET['document_nice'] ) ) {
-	if ( is_numeric( $_GET['document_nice'] ) ) {
+	if ( is_numeric( $_GET['document_nice'] ) && wp_verify_nonce( $_GET['nonce'] ?? '', 'document_nonce' ) ) {
 		nicen_theme_setPostNice( $_GET['document_nice'] );
 
 		exit( json_encode( [
@@ -47,27 +47,13 @@ if ( isset( $_GET['document_nice'] ) ) {
  * 点赞
  * */
 if ( isset( $_GET['document_view'] ) ) {
-	if ( is_numeric( $_GET['document_view'] ) ) {
+	if ( is_numeric( $_GET['document_view'] ) && wp_verify_nonce( $_GET['nonce'] ?? '', 'document_nonce' ) ) {
 		nicen_theme_setPostViews( $_GET['document_view'] );
 
 		exit( json_encode( [
 			'code'   => 1,
 			'errMsg' => "阅读+1！",
 			'view'   => nicen_theme_getPostViews( $_GET['document_view'] )
-		] ) );
-	}
-}
-
-
-/*
- * 踩
- * */
-if ( isset( $_GET['document_bad'] ) ) {
-	if ( is_numeric( $_GET['document_bad'] ) ) {
-		nicen_theme_setPostBad( $_GET['document_bad'] );
-		exit( json_encode( [
-			'code'   => 1,
-			'errMsg' => "踩成功！"
 		] ) );
 	}
 }

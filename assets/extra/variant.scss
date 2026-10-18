@@ -4,17 +4,17 @@
 :root {
 
   /*基础样式变量*/
-  --theme-text-super-mini: 0.4rem;
-  --theme-text-mini: 0.76rem;
-  --theme-text-more-mini: 0.69rem;
-  --theme-text-more-mini-2: 0.62rem;
-  --theme-text: 0.84rem;
-  --theme-header-size: 1.1rem;
-  --theme-secondary: 0.78rem;
-  --theme-first-level-title: 1.35rem;
-  --theme-secondary-level-title: 1.15rem;
-  --theme-third-level-title: 0.96rem;
-  --theme-fourth-level-title: 0.84rem;
+  --theme-text-super-mini: 0.38rem;
+  --theme-text-mini: 0.7rem;
+  --theme-text-more-mini: 0.65rem;
+  --theme-text-more-mini-2: 0.58rem;
+  --theme-text: 0.88rem;
+  --theme-header-size: 0.95rem;
+  --theme-secondary: 0.72rem;
+  --theme-first-level-title: 1.22rem;
+  --theme-secondary-level-title: 1.06rem;
+  --theme-third-level-title: 0.92rem;
+  --theme-fourth-level-title: 0.82rem;
 
   /*主题文件样式变量*/
   --theme-black-text: #333;
@@ -40,6 +40,12 @@
 
   --theme-header-color: var(--theme-color);
   --theme-header-border: #e1e1e1;
+  --theme-header-bg-color: var(--theme-front-main-color);
+  --theme-header-font-color: var(--theme-text-color);
+  --theme-sub-menu-bg-color: var(--theme-front-main-color);
+  --theme-sub-menu-font-color: var(--theme-text-color);
+  --theme-header-border-color: var(--theme-header-border);
+  --theme-header-shadow-color: transparent;
 
   --theme-hover-bg: #444;
   --theme-hover-color: white;
@@ -82,6 +88,16 @@
 
   --theme-shadow: 0 2px 6px 0 rgba(0, 0, 0, 0.22);
   --theme-placeholder: #a4a4a4;
+
+  --theme-border-color: #e1e1e1;
+  --theme-input-border-color: #cfd4db;
+  --theme-table-border-color: #d0d7de;
+  --theme-table-row-hover: #{rgba(#3c5a64, 0.04)};
+  --theme-pagination-bg: #{rgba(0, 0, 0, 0.05)};
+  --theme-pre-text: #65a4e3;
+  --theme-tooltip-bg: #2c3e50;
+  --theme-tooltip-shadow: #{rgba(#2c3e50, 0.5)};
+  --theme-search-placeholder: rgb(117, 117, 117);
 }
 
 

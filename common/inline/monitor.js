@@ -7,30 +7,50 @@
 
 /*
 * 防止子容器触发父容器的滚动
+* 兼容旧版本 jQuery（例如 1.6.2 不支持 .on）和现代浏览器
+* 不再依赖 $(elem).on，而是直接使用原生事件绑定
 * */
 $.fn.scrollUnique = function () {
     return $(this).each(function () {
-        var eventType = 'mousewheel';
-        // 火狐是DOMMouseScroll事件
-        if (document.mozHidden !== undefined) {
-            eventType = 'DOMMouseScroll';
-        }
-        $(this).on(eventType, function (event) {
+        var elem = this;
+        // 统一使用 wheel / DOMMouseScroll / mousewheel 事件，兼容各浏览器
+        var handler = function (event) {
+            var e = event || window.event;
+            var original = e.originalEvent || e;
 
             // 一些数据
-            var scrollTop = this.scrollTop,
-                scrollHeight = this.scrollHeight,
-                height = this.clientHeight;
+            var scrollTop = elem.scrollTop,
+                scrollHeight = elem.scrollHeight,
+                height = elem.clientHeight;
 
-            var delta = (event.originalEvent.wheelDelta) ? event.originalEvent.wheelDelta : -(event.originalEvent.detail || 0);
+            var delta = original.wheelDelta ? original.wheelDelta : -(original.detail || 0);
 
             if ((delta > 0 && scrollTop <= delta) || (delta < 0 && scrollHeight - height - scrollTop <= -1 * delta)) {
-                // IE浏览器下滚动会跨越边界直接影响父级滚动，因此，临界时候手动边界滚动定位
-                this.scrollTop = delta > 0 ? 0 : scrollHeight;
+                // IE 浏览器下滚动会跨越边界直接影响父级滚动，因此，临界时候手动边界滚动定位
+                elem.scrollTop = delta > 0 ? 0 : scrollHeight;
                 // 向上滚 || 向下滚
-                event.preventDefault();
+                if (e.preventDefault) {
+                    e.preventDefault();
+                } else {
+                    e.returnValue = false;
+                }
             }
-        });
+        };
+
+        // 优先使用标准 wheel 事件
+        if (elem.addEventListener) {
+            elem.addEventListener('wheel', handler, { passive: false });
+            // 兼容旧版 Firefox
+            elem.addEventListener('DOMMouseScroll', handler, { passive: false });
+            // 兼容部分旧版浏览器
+            elem.addEventListener('mousewheel', handler, { passive: false });
+        } else if (elem.attachEvent) {
+            // 旧版 IE
+            elem.attachEvent('onmousewheel', handler);
+        } else {
+            // 最后兜底
+            elem.onmousewheel = handler;
+        }
     });
 };
 
@@ -57,12 +77,15 @@ $(function ($) {
 
     /*
     * 屏蔽文章导航滚动事件向上传递
+    * 兼容老版本 jQuery（使用 .scroll 而不是 .on）
     * */
     (function () {
-        $('.scroll').scrollUnique()
-            .on('scroll', function (e) {
-                e.stopPropagation(); //停止向上传递事件
-            });
+        // 初始化自定义滚轮处理，防止滚动穿透到父容器
+        $('.scroll').scrollUnique();
+        // 使用 jQuery.scroll 绑定 scroll 事件，在所有 jQuery 版本中都可用
+        $('.scroll').scroll(function (e) {
+            e.stopPropagation(); //停止向上传递事件
+        });
     })();
 
     //防止重复触发目录滚动
@@ -138,7 +161,8 @@ $(function ($) {
             }
 
 
-            let anchor = main.find(Index.find('div a').attr("href"));
+            // 直接根据锚点选择器查找目标节点，避免依赖 html 作为根节点
+            let anchor = $(Index.find('div a').attr("href"));
 
             if (anchor.length !== 0) {
 
@@ -152,11 +176,22 @@ $(function ($) {
                 let top = anchor.getTop() - ($(".isIndex").length > 0 ? 55 : 15);
 
                 /*
-                * 滚动锚点标记
+                * 使用 window.scrollTo 进行滚动，兼容 Firefox / Chromium
                 * */
-                main.animate({scrollTop: top}, 200, function () {
+                try {
+                    window.scrollTo({
+                        top: top,
+                        behavior: 'smooth'
+                    });
+                    // 简单延时后恢复监听（平滑滚动大约 200ms）
+                    setTimeout(function () {
+                        watchScroll = true;
+                    }, 300);
+                } catch (e) {
+                    // 不支持平滑滚动配置的旧浏览器降级处理
+                    window.scrollTo(0, top);
                     watchScroll = true;
-                });
+                }
 
             }
 
@@ -227,9 +262,10 @@ $(function ($) {
             if (!watchScroll) return;
 
 
-            let thats = main;
-            let top = thats.get(0).scrollTop;
-            let collects = thats.find(".main-content").find("h1,h2,h3,h4");
+            // 获取当前已滚动的距离（优先使用 window.scrollY，兼容 Firefox）
+            let top = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+            // 直接从文章内容区域查找标题，避免依赖 html 作为根节点
+            let collects = $(".main-content").find("h1,h2,h3,h4");
             let position = null;
 
             /*
@@ -335,29 +371,16 @@ $(function ($) {
 
 
     /*
-    * 文章踩、文章点赞
+    * 文章点赞
     * */
     (function () {
 
         $('.icp-beian div').click(function () {
-
-            /*
-            * 判断点赞的是哪一个
-            * */
-            if ($('.icp-beian div').index(this) == 0) {
-                /* 点赞  */
-                let that = $(this);
-                $.post("/?document_nice=" + Current, function () {
-                    that.find('span').text(parseInt(that.find('span').text()) + 1);
-                });
-            } else {
-                /* 踩 */
-                let that = $(this);
-                $.post("/?document_bad=" + Current, function () {
-                    that.find('span').text(parseInt(that.find('span').text()) + 1);
-                });
-            }
-
+            let that = $(this);
+            $.post("/?document_nice=" + Current + "&nonce=" + (window.DOCUMENT_NONCE || ""), function () {
+                let number = that.find('.number');
+                number.text(parseInt(number.text()) + 1);
+            });
         });
     })();
 

@@ -41,6 +41,42 @@
 pre * {
   color: #65a4e3; }
 
+/* KaTeX blocks may be rendered inside <pre>; keep formulas in the article text color. */
+.main-article .katex {
+  color: var(--theme-text-color);
+  line-height: normal;
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal; }
+  .main-article .katex * {
+    color: inherit;
+    line-height: normal;
+    word-break: normal;
+    overflow-wrap: normal; }
+
+.main-article .katex-display {
+  display: block;
+  margin: 1.15rem 0;
+  padding: 0.25rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-align: center; }
+
+/* Hide third-party like widgets injected before the article body. */
+.main-article > .wpulike:first-child,
+.main-article > .wp-ulike:first-child,
+.main-article > .wp_ulike_general_class:first-child,
+.main-article > .likebtn_container:first-child,
+.main-article > .likebtn-wrapper:first-child,
+.main-article > .super-like:first-child,
+.main-article > .superlike:first-child,
+.main-article > .post-like:first-child,
+.main-article > .post-like-wrap:first-child,
+.main-article > .zilla-likes:first-child,
+.main-article > .wp-like-button:first-child,
+.main-article > .simplefavorite-button:first-child {
+  display: none !important; }
+
 p {
   margin: 0 0 var(--theme-margin-bottom) 0;
   font-weight: normal; }

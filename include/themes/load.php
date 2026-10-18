@@ -2,6 +2,44 @@
 
 
 /*
+ * 获取压缩版文件路径（如果存在 .min.js/.min.css 就用，否则用原版）
+ * */
+function nicen_theme_min_path( $file_path ) {
+	$root = get_template_directory();
+	$ext  = pathinfo( $file_path, PATHINFO_EXTENSION );
+	$min  = preg_replace( '/\.' . $ext . '$/', '.min.' . $ext, $file_path );
+	if ( file_exists( $root . $min ) ) {
+		return $min;
+	}
+	return $file_path;
+}
+
+/**
+ * Use the asset contents as the cache-busting version.
+ * ZIP uploads can preserve Git timestamps, so filemtime() alone may keep a
+ * CDN serving an older file after the theme has been updated.
+ */
+function nicen_theme_asset_version( $file_path ) {
+	if ( ! file_exists( $file_path ) ) {
+		return null;
+	}
+
+	return substr( md5_file( $file_path ), 0, 12 );
+}
+
+function nicen_theme_has_mermaid_content( $content ) {
+	if ( empty( $content ) ) {
+		return false;
+	}
+
+	if ( has_shortcode( $content, 'mermaid' ) ) {
+		return true;
+	}
+
+	return preg_match( '/```mermaid|~~~mermaid|language-mermaid|lang-mermaid|class=["\'][^"\']*\bmermaid\b/i', $content ) === 1;
+}
+
+/*
  * 外部文件加载
  * */
 function nicen_theme_load_source() {
@@ -12,7 +50,7 @@ function nicen_theme_load_source() {
 
 	/* 底部推荐区域 */
 	if ( is_active_sidebar( 'content_down' ) ) {
-		wp_enqueue_script( 'swiper', $url . '/assets/theme/swiper-bundle.js', false );
+		wp_enqueue_script( 'swiper', $url . '/assets/theme/swiper-bundle.js', false, null, true );
 		wp_enqueue_style( 'swiper-styles', $url . '/assets/theme/swiper-bundle.css' );
 	}
 
@@ -23,16 +61,23 @@ function nicen_theme_load_source() {
 	/* 内联的js */
 	wp_add_inline_script( "jquery", 'window.$ = jQuery;', 'after' );
 
-	wp_enqueue_script( 'enquire', $url . '/assets/theme/enquire.js', false );
+	wp_enqueue_script( 'enquire', $url . nicen_theme_min_path( '/assets/theme/enquire.js' ), false, null, true );
 
 
-	wp_enqueue_script( 'main-sub', $url . '/common/inline/main.js', array(), filemtime( $root . '/common/inline/main.js' ), false );
+	wp_enqueue_script( 'main-sub', $url . nicen_theme_min_path( '/common/inline/main.js' ), array(), filemtime( $root . nicen_theme_min_path( '/common/inline/main.js' ) ), true );
 
-	wp_enqueue_script( 'main', $url . '/common/main.js', array(), filemtime( $root . '/common/main.js' ), false );
+	wp_enqueue_script( 'main', $url . nicen_theme_min_path( '/common/main.js' ), array(), filemtime( $root . nicen_theme_min_path( '/common/main.js' ) ), true );
+
+	wp_enqueue_script( 'sw-register', $url . nicen_theme_min_path( '/common/sw/register.js' ), array(), filemtime( $root . nicen_theme_min_path( '/common/sw/register.js' ) ), true );
 
 
-	/*主题的style.css*/
-	wp_enqueue_style( 'main-styles', get_stylesheet_uri(), array(), filemtime( $root . '/style.css' ) );
+	/*主题的style.css - 加载压缩版*/
+	$style_path = nicen_theme_min_path( '/style.css' );
+	if ( $style_path !== '/style.css' ) {
+		wp_enqueue_style( 'main-styles', $url . $style_path, array(), filemtime( $root . $style_path ) );
+	} else {
+		wp_enqueue_style( 'main-styles', get_stylesheet_uri(), array(), filemtime( $root . '/style.css' ) );
+	}
 
 	/*
 	 * 去除无用的css
@@ -45,22 +90,22 @@ function nicen_theme_load_source() {
 	 * */
 	if ( is_single() ) {
 		if ( nicen_theme_config( "document_single_show_catalog", false ) ) {
-			wp_enqueue_script( 'main-monitor', $url . '/common/inline/monitor.js', array(), filemtime( $root . '/common/inline/monitor.js' ), false );
+			wp_enqueue_script( 'main-monitor', $url . nicen_theme_min_path( '/common/inline/monitor.js' ), array(), filemtime( $root . nicen_theme_min_path( '/common/inline/monitor.js' ) ), true );
 		}
 		if ( is_active_sidebar( 'content_down' ) ) {
-			wp_enqueue_script( 'page-swiper', $url . '/common/inline/swiper.js', array(), filemtime( $root . '/common/inline/swiper.js' ), false );
+			wp_enqueue_script( 'page-swiper', $url . nicen_theme_min_path( '/common/inline/swiper.js' ), array(), filemtime( $root . nicen_theme_min_path( '/common/inline/swiper.js' ) ), true );
 		}
 	}
 
 
 	if ( is_home() ) {
 		if ( nicen_theme_config( "document_show_left_nav", false ) ) {
-			wp_enqueue_script( 'main-monitor', $url . '/common/inline/monitor.js', array(), filemtime( $root . '/common/inline/monitor.js' ), false );
+			wp_enqueue_script( 'main-monitor', $url . nicen_theme_min_path( '/common/inline/monitor.js' ), array(), filemtime( $root . nicen_theme_min_path( '/common/inline/monitor.js' ) ), true );
 		}
 	}
 	if ( is_category() || is_tag() || is_search() ) {
 		if ( nicen_theme_config( "document_show_else_left_nav", false ) ) {
-			wp_enqueue_script( 'main-monitor', $url . '/common/inline/monitor.js', array(), filemtime( $root . '/common/inline/monitor.js' ), false );
+			wp_enqueue_script( 'main-monitor', $url . nicen_theme_min_path( '/common/inline/monitor.js' ), array(), filemtime( $root . nicen_theme_min_path( '/common/inline/monitor.js' ) ), true );
 		}
 	}
 	/*
@@ -68,11 +113,41 @@ function nicen_theme_load_source() {
 	 * */
 	if ( is_single() ) {
 
-		wp_enqueue_script( 'viewerjs', $url . '/common/viewer/viewer.min.js', array(), filemtime( $root . '/common/viewer/viewer.min.js' ), false );
-		wp_enqueue_script( 'prism', $url . '/common/prism/prism.js', array(), filemtime( $root . '/common/prism/prism.js' ), false );
-		wp_enqueue_style( 'prism', $url . '/common/prism/prism.css', array(), filemtime( $root . '/common/prism/prism.css' ) );
+		wp_enqueue_script( 'viewerjs', $url . '/common/viewer/viewer.min.js', array(), filemtime( $root . '/common/viewer/viewer.min.js' ), true );
+		wp_enqueue_script( 'prism', $url . nicen_theme_min_path( '/common/prism/prism.js' ), array(), filemtime( $root . nicen_theme_min_path( '/common/prism/prism.js' ) ), true );
+		wp_enqueue_style( 'prism', $url . nicen_theme_min_path( '/common/prism/prism.css' ), array(), filemtime( $root . nicen_theme_min_path( '/common/prism/prism.css' ) ) );
 		wp_enqueue_style( 'viewercss', $url . '/common/viewer/viewer.min.css', array(), filemtime( $root . '/common/viewer/viewer.min.css' ) );
+		if ( nicen_theme_should_show_post_citation() ) {
+			wp_enqueue_script( 'document-citation', $url . nicen_theme_min_path( '/common/inline/citation.js' ), array(), filemtime( $root . nicen_theme_min_path( '/common/inline/citation.js' ) ), true );
+		}
 
+		wp_enqueue_script( 'runcode', $url . nicen_theme_min_path( '/common/runcode/runcode.js' ), array( 'prism' ), filemtime( $root . nicen_theme_min_path( '/common/runcode/runcode.js' ) ), true );
+		wp_enqueue_style( 'runcode', $url . nicen_theme_min_path( '/common/runcode/runcode.css' ), array( 'prism' ), filemtime( $root . nicen_theme_min_path( '/common/runcode/runcode.css' ) ) );
+
+	}
+
+	/*
+	 * 3D 模型查看器 - 仅在文章包含 [3d] 短标签时加载
+	 * */
+	if ( is_singular() ) {
+		global $post;
+		if ( has_shortcode( $post->post_content, '3d' ) ) {
+			wp_enqueue_script( 'model-viewer', $url . '/assets/theme/model-viewer.min.js', array(), filemtime( $root . '/assets/theme/model-viewer.min.js' ), true );
+		}
+		if ( has_shortcode( $post->post_content, 'plot3d' ) ) {
+			wp_enqueue_script( 'plotly-gl3d', $url . '/assets/theme/plotly-gl3d.min.js', array(), filemtime( $root . '/assets/theme/plotly-gl3d.min.js' ), true );
+			wp_enqueue_script( 'plotly-bindings', $url . nicen_theme_min_path( '/common/plotly/plotly-bindings.js' ), array( 'plotly-gl3d' ), filemtime( $root . nicen_theme_min_path( '/common/plotly/plotly-bindings.js' ) ), true );
+		}
+		if ( has_shortcode( $post->post_content, 'compare' ) ) {
+			wp_enqueue_script( 'img-compare', $url . nicen_theme_min_path( '/common/compare/compare.js' ), array(), filemtime( $root . nicen_theme_min_path( '/common/compare/compare.js' ) ), true );
+		}
+		if ( nicen_theme_has_mermaid_content( $post->post_content ) ) {
+			$mermaid_script = nicen_theme_min_path( '/common/mermaid/mermaid.js' );
+			$mermaid_style  = nicen_theme_min_path( '/common/mermaid/mermaid.css' );
+			wp_enqueue_script( 'mermaid', 'https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.min.js', array(), '10.9.3', true );
+			wp_enqueue_script( 'document-mermaid', $url . $mermaid_script, array( 'mermaid' ), filemtime( $root . $mermaid_script ), true );
+			wp_enqueue_style( 'document-mermaid', $url . $mermaid_style, array(), filemtime( $root . $mermaid_style ) );
+		}
 	}
 
 
@@ -80,9 +155,9 @@ function nicen_theme_load_source() {
 	 * 主页轮播相关资源加载
 	 * */
 	if ( is_home() ) {
-		wp_enqueue_style( 'swiper_self', $url . '/common/swiper/swiper.css', array(), filemtime( $root . '/common/swiper/swiper.css' ) );
-		wp_enqueue_script( 'swiper_self', $url . '/common/swiper/swiper.js', array(), filemtime( $root . '/common/swiper/swiper.js' ), true );
-		wp_enqueue_script( 'swiper', $url . '/assets/theme/swiper-bundle.js', false );
+		wp_enqueue_style( 'swiper_self', $url . nicen_theme_min_path( '/common/swiper/swiper.css' ), array(), filemtime( $root . nicen_theme_min_path( '/common/swiper/swiper.css' ) ) );
+		wp_enqueue_script( 'swiper_self', $url . nicen_theme_min_path( '/common/swiper/swiper.js' ), array(), filemtime( $root . nicen_theme_min_path( '/common/swiper/swiper.js' ) ), true );
+		wp_enqueue_script( 'swiper', $url . '/assets/theme/swiper-bundle.js', false, null, true );
 		wp_enqueue_style( 'swiper-styles', $url . '/assets/theme/swiper-bundle.css' );
 		/*
 		 * 内联的js代码
@@ -99,7 +174,7 @@ function nicen_theme_load_source() {
 	 * */
 	if ( is_singular() ) {
 
-		wp_enqueue_script( 'main-emoji', $url . '/common/inline/emoji.js', array(), filemtime( $root . '/common/inline/emoji.js' ), false );
+		wp_enqueue_script( 'main-emoji', $url . nicen_theme_min_path( '/common/inline/emoji.js' ), array(), filemtime( $root . nicen_theme_min_path( '/common/inline/emoji.js' ) ), true );
 
 		/*
 		 * 内联的js
@@ -110,11 +185,11 @@ function nicen_theme_load_source() {
 			, [ time(), get_the_ID() ] ) ), 'before' );
 
 		/* 阅读数同步和提交 */
-		wp_enqueue_script( 'single-view', $url . '/common/inline/view.js', [ 'main-sub' ], filemtime( $root . '/common/inline/view.js' ), false );
+		wp_enqueue_script( 'single-view', $url . nicen_theme_min_path( '/common/inline/view.js' ), [ 'main-sub' ], filemtime( $root . nicen_theme_min_path( '/common/inline/view.js' ) ), true );
 
 
 	} else {
-		wp_enqueue_script( 'main-index', $url . '/common/inline/index.js', array( 'main' ), filemtime( $root . '/common/inline/index.js' ), false );
+		wp_enqueue_script( 'main-index', $url . nicen_theme_min_path( '/common/inline/index.js' ), array( 'main' ), filemtime( $root . nicen_theme_min_path( '/common/inline/index.js' ) ), true );
 		/*
 		 * 内联的js代码
 		 * */
@@ -130,8 +205,17 @@ function nicen_theme_load_source() {
 	 * */
 	wp_add_inline_script( "main-sub", preg_replace( '/\s/', '', vsprintf( '
 			window.ROOT = "%s";
-			window.HOME = "%s";'
-		, [ $url, home_url() ] ) ), 'before' );
+			window.HOME = "%s";
+			window.DOCUMENT_NONCE = "%s";'
+		, [ $url, home_url(), wp_create_nonce( 'document_nonce' ) ] ) ), 'before' );
+
+	/*
+	 * Clipboard listener - loaded globally for logged-in users
+	 */
+	if ( is_user_logged_in() ) {
+		wp_enqueue_script( 'clipboard-listener', $url . nicen_theme_min_path( '/common/clipboard/clipboard-listener.js' ), array(), filemtime( $root . nicen_theme_min_path( '/common/clipboard/clipboard-listener.js' ) ), true );
+		wp_add_inline_script( 'clipboard-listener', 'window.CLIPBOARD_AJAX="' . admin_url( 'admin-ajax.php' ) . '";', 'before' );
+	}
 
 	/*
 	 * 内联的css
@@ -177,8 +261,9 @@ function nicen_theme_load_source() {
 				 * 如果不是外部文件
 				 * */
 				if ( strpos( $style, 'http' ) === false ) {
-					$ver = filemtime( $root . $style );
-					wp_enqueue_style( $key, $url . $style, array(), $ver );
+					$min_style = nicen_theme_min_path( $style );
+					$ver = nicen_theme_asset_version( $root . $min_style );
+					wp_enqueue_style( $key, $url . $min_style, array(), $ver );
 				} else {
 					wp_enqueue_style( $key, $style, array() );
 				}
@@ -189,18 +274,41 @@ function nicen_theme_load_source() {
 		 * 是否有脚本依赖
 		 * */
 		if ( isset( $value['dependent']['scripts'] ) ) {
-			foreach ( $value['dependent']['scripts'] as $script ) {
+			foreach ( $value['dependent']['scripts'] as $script_key => $script ) {
+				$handle = is_string( $script_key ) ? sanitize_key( $script_key ) : $key;
+				$dependencies = array();
+				if ( is_array( $script ) ) {
+					$dependencies = array_map( 'sanitize_key', $script['deps'] ?? array() );
+					$script = $script['src'] ?? '';
+				}
 
 				/*
 				 * 如果不是外部文件
 				 * */
 				if ( strpos( $script, 'http' ) === false ) {
-					$ver = filemtime( $root . $script );
-					wp_enqueue_script( $key, $url . $script, array(), $ver );
+					$min_script = nicen_theme_min_path( $script );
+					$ver = nicen_theme_asset_version( $root . $min_script );
+					wp_enqueue_script( $handle, $url . $min_script, $dependencies, $ver, true );
 				} else {
-					wp_enqueue_script( $key, $script, array() );
+					wp_enqueue_script( $handle, $script, $dependencies, null, true );
 				}
 			}
+		}
+
+		/*
+		 * Snake Game: inject anti-cheat salt before game script
+		 */
+		if ( $key === 'Snake Game' ) {
+			$snake_salt = md5( 'snake_' . date( 'Y-m-d' ) . '_' . wp_salt( 'auth' ) );
+			wp_add_inline_script( $key, 'window.SNAKE_DAY_SALT="' . $snake_salt . '";window.SNAKE_AJAX="' . admin_url( 'admin-ajax.php' ) . '";', 'before' );
+		}
+
+		/*
+		 * Doom FPS: inject anti-cheat salt before game script
+		 */
+		if ( $key === 'Doom FPS' ) {
+			$doom_salt = md5( 'doom_' . date( 'Y-m-d' ) . '_' . wp_salt( 'auth' ) );
+			wp_add_inline_script( $key, 'window.DOOM_DAY_SALT="' . $doom_salt . '";window.DOOM_AJAX="' . admin_url( 'admin-ajax.php' ) . '";', 'before' );
 		}
 	}
 
@@ -210,5 +318,42 @@ function nicen_theme_load_source() {
  * 前台加载样式和脚本
  * */
 add_action( 'wp_enqueue_scripts', 'nicen_theme_load_source' ); //加载前台资源文件
+
+/*
+ * 为所有前端 JS 添加 defer 属性
+ * defer = 浏览器并行下载 JS，但等 HTML 解析完毕后再按顺序执行
+ * 效果：页面首屏渲染不再被 JS 下载阻塞，白屏时间大幅缩短
+ *
+ * 排除的脚本：
+ * - jQuery 相关：许多内联脚本依赖 jQuery 立即可用，defer 会导致 $ is not defined
+ * - wp-includes 下的脚本：WordPress 核心脚本，不宜修改加载方式
+ * */
+function nicen_theme_add_defer_to_scripts( $tag, $handle, $src ) {
+
+	/* 只处理前端页面 */
+	if ( is_admin() ) {
+		return $tag;
+	}
+
+	/* model-viewer 需要 type="module" 加载 */
+	if ( $handle === 'model-viewer' ) {
+		return str_replace( ' src=', ' type="module" src=', $tag );
+	}
+
+	/* 不给 jQuery 加 defer，因为很多 inline script 依赖它立即执行 */
+	$no_defer = [ 'jquery', 'jquery-core', 'jquery-migrate' ];
+	if ( in_array( $handle, $no_defer ) ) {
+		return $tag;
+	}
+
+	/* 已经有 defer 或 async 的不重复添加 */
+	if ( strpos( $tag, ' defer' ) !== false || strpos( $tag, ' async' ) !== false ) {
+		return $tag;
+	}
+
+	/* 添加 defer 属性 */
+	return str_replace( ' src=', ' defer src=', $tag );
+}
+add_filter( 'script_loader_tag', 'nicen_theme_add_defer_to_scripts', 10, 3 );
 
 

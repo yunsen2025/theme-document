@@ -266,14 +266,23 @@ $(function ($) {
             * 左侧边栏位置检测
             * */
             function fixedLeft() {
+                // 每次调用时都重新获取最新的位置和高度值，确保计算准确
+                if (space.length > 0) {
+                    topTop = $('#space').getTop();
+                    topHeight = navigator.outerHeight();
+                    topOffset = innerHeight - topHeight - topTop;
+                }
 
-                let html_scrollTop = html.scrollTop();
+                // 优先使用 window.scrollY，兼容某些浏览器 html.scrollTop 始终为 0 的情况
+                let html_scrollTop = window.scrollY || html.scrollTop();
 
 
                 if (html_scrollTop >= _absolute) {
 
                     isfixedLeft = true;
+                    // 重新获取最新高度（可能因为图片加载而变化）
                     topHeight = navigator.outerHeight();
+                    topTop = $('#space').getTop();
                     topOffset = innerHeight - topHeight - topTop;
 
 
@@ -314,8 +323,21 @@ $(function ($) {
                             top = min;
                         }
 
+                        // 确保 top 值不会超出可视区域（防止侧栏移出屏幕）
+                        // top 值应该在 min 和 (min + navigator.height()) 之间
+                        if (top < min) {
+                            top = min;
+                        }
+                        // 确保侧栏底部不会超出屏幕底部
+                        let maxTop = innerHeight - navigator.outerHeight() - 20; // 留20px边距
+                        if (top > maxTop && maxTop > min) {
+                            top = maxTop;
+                        }
 
                         navigator.css('top', top);
+                    } else {
+                        // 如果还没到需要偏移的位置，确保侧栏在初始位置
+                        navigator.css('top', topTop);
                     }
 
                 } else {
@@ -366,6 +388,8 @@ $(function ($) {
             * 滚动、屏幕大小变化时，动态更新右侧侧边栏的位置
             * */
             function toFixed() {
+                // 每次滚动时都重新计算高度值，因为页面高度可能在滚动过程中发生变化（如图片加载）
+                computed();
 
                 /*
                 * 如果有左侧边栏
@@ -388,8 +412,8 @@ $(function ($) {
 
                 isFixed = true;//标记正在滚动
 
-                // 已经滚动的距离
-                let html_scrollTop = html.scrollTop();
+                // 已经滚动的距离（优先使用 window.scrollY，兼容性更好）
+                let html_scrollTop = window.scrollY || html.scrollTop();
 
                 /*
                 * 大于保持静态，小于保持绝对
@@ -475,6 +499,139 @@ $(function ($) {
                     }
                 }
             });
+
+            /*
+            * 图片加载完成后重新计算导航栏位置
+            * 解决图片懒加载导致的高度计算不准确问题
+            * */
+            (function() {
+                let imageLoadTimer = null; //防抖计时器
+                let loadedImages = 0; //已加载图片计数
+                let totalImages = 0; //总图片数
+
+                // 重新计算导航栏位置的函数（带防抖）
+                function recalculateOnImageLoad() {
+                    if (imageLoadTimer) {
+                        clearTimeout(imageLoadTimer);
+                    }
+                    imageLoadTimer = setTimeout(function() {
+                        if (typeof computed === 'function') {
+                            computed(); //重新计算高度
+                        }
+                        if (typeof toFixed === 'function') {
+                            toFixed(); //重新计算位置
+                        }
+                    }, 100); //防抖延迟100ms
+                }
+
+                // 监听所有图片的加载事件
+                function setupImageLoadListeners() {
+                    const images = document.querySelectorAll('img');
+                    totalImages = images.length;
+
+                    if (totalImages === 0) {
+                        // 如果没有图片，直接执行一次计算
+                        recalculateOnImageLoad();
+                        return;
+                    }
+
+                    images.forEach(function(img) {
+                        // 如果图片已经加载完成
+                        if (img.complete && img.naturalHeight !== 0) {
+                            loadedImages++;
+                            if (loadedImages === totalImages) {
+                                recalculateOnImageLoad();
+                            }
+                        } else {
+                            // 监听图片加载完成事件
+                            img.addEventListener('load', function() {
+                                loadedImages++;
+                                if (loadedImages === totalImages) {
+                                    recalculateOnImageLoad();
+                                } else {
+                                    // 每张图片加载完成都重新计算一次（防抖会合并多次调用）
+                                    recalculateOnImageLoad();
+                                }
+                            }, { once: true });
+
+                            // 监听图片加载错误事件（也要重新计算）
+                            img.addEventListener('error', function() {
+                                loadedImages++;
+                                recalculateOnImageLoad();
+                            }, { once: true });
+                        }
+                    });
+                }
+
+                // 页面加载完成后也重新计算一次
+                if (document.readyState === 'complete') {
+                    setupImageLoadListeners();
+                } else {
+                    window.addEventListener('load', function() {
+                        setupImageLoadListeners();
+                    });
+                }
+
+                // 监听动态添加的图片（使用 MutationObserver）
+                if (typeof MutationObserver !== 'undefined') {
+                    const observer = new MutationObserver(function(mutations) {
+                        let hasNewImages = false;
+                        mutations.forEach(function(mutation) {
+                            mutation.addedNodes.forEach(function(node) {
+                                if (node.nodeType === 1) { // Element node
+                                    if (node.tagName === 'IMG') {
+                                        hasNewImages = true;
+                                        totalImages++;
+                                        if (node.complete && node.naturalHeight !== 0) {
+                                            loadedImages++;
+                                            recalculateOnImageLoad();
+                                        } else {
+                                            node.addEventListener('load', function() {
+                                                loadedImages++;
+                                                recalculateOnImageLoad();
+                                            }, { once: true });
+                                            node.addEventListener('error', function() {
+                                                loadedImages++;
+                                                recalculateOnImageLoad();
+                                            }, { once: true });
+                                        }
+                                    } else if (node.querySelectorAll) {
+                                        const imgs = node.querySelectorAll('img');
+                                        if (imgs.length > 0) {
+                                            hasNewImages = true;
+                                            totalImages += imgs.length;
+                                            imgs.forEach(function(img) {
+                                                if (img.complete && img.naturalHeight !== 0) {
+                                                    loadedImages++;
+                                                    recalculateOnImageLoad();
+                                                } else {
+                                                    img.addEventListener('load', function() {
+                                                        loadedImages++;
+                                                        recalculateOnImageLoad();
+                                                    }, { once: true });
+                                                    img.addEventListener('error', function() {
+                                                        loadedImages++;
+                                                        recalculateOnImageLoad();
+                                                    }, { once: true });
+                                                }
+                                            });
+                                        }
+                                    }
+                                }
+                            });
+                        });
+                        if (hasNewImages) {
+                            recalculateOnImageLoad();
+                        }
+                    });
+
+                    // 开始观察DOM变化
+                    observer.observe(document.body, {
+                        childList: true,
+                        subtree: true
+                    });
+                }
+            })();
         }
 
     })();

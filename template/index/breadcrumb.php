@@ -36,7 +36,7 @@ if ( nicen_theme_showBread() ) {
 
 	?>
     <div class="breadcrumb">
-        现在位置: <a href="/" title="首页">首页</a>
+        Current Location: <a href="/" title="Main Page">Main Page</a>
 		<?php if ( ! $no_category ) { ?>
             /
             <a href="<?php echo $link ?>" title=" <?php echo $category; ?>"> <?php echo $category; ?></a>
@@ -45,7 +45,7 @@ if ( nicen_theme_showBread() ) {
             /
             <a href="<?php echo $linkTag ?>" title=" <?php echo $tags; ?>"> <?php echo $tags; ?></a>
 		<?php } ?>
-        / 正文
+        / Main Content
     </div>
 	<?php
 }
